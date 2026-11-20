@@ -19,12 +19,12 @@ order updates on Messenger, a menu editor, and customer profiles with pickup his
 | Dedup by page + message id, persisted before the 200 is returned | done |
 | Durable SQLite queue: per-customer ordering, cross-customer concurrency, retry with backoff, stale-lock recovery | done |
 | Echo handling: our own echoes ignored; staff replies from the Page inbox pause the bot for that customer | done |
-| Attachments hand off to a human | done |
+| Photos: a photo sent while ordering a Special Design Donut is saved with the order (owners see it on the Messenger alert and in the portal; Sprinkle never describes it); any other photo or file hands the chat to a human. Photos are only fetched from Facebook's own servers, up to `PHOTO_MAX_MB`, and kept in `UPLOADS_PATH` | done |
 | SQLite schema + forward-only migrations, WAL, foreign keys, FTS5 table for Phase 3 | done |
 | Menu seeding from `data/menu.json` (removed items become unavailable, never deleted) | done |
 | Cart with modifiers, quantity limits, versioning | done |
 | Integer-cent totals, configurable tax (half-up rounding) | done |
-| Pickup validation: hours, closed dates, lead time, booking horizon, slot size, DST | done |
+| Pickup validation: hours, closed dates, lead time, booking horizon, slot size, DST; the last pickup is 12:15 PM (15 minutes before closing), and Sprinkle says so whenever it gives the hours | done |
 | Confirmation tokens bound to customer + cart version + expiry | done |
 | Atomic order + owner-SMS outbox rows (one per owner phone), idempotent re-confirmation | done |
 | Order transitions with conditional updates and an audit trail; pending-order expiry; customer cancel rules | done |
@@ -41,11 +41,13 @@ order updates on Messenger, a menu editor, and customer profiles with pickup his
 | Fresh start after 12 quiet hours: the AI sees only the new messages; an unfinished cart is set aside and offered back once (`SESSION_IDLE_HOURS`) | done |
 | Short menu answers on phones: per-item prices from `browse_menu`, one level at a time, tap-to-pick quick replies | done |
 | Owner alerts on Facebook Messenger: owners link their account with a one-time 8-character code (portal → Owner alerts) and someone approves it there; then they tap Accept/Decline, Picked up/No-show, or reply with an exact command like `YES 12`; texts are the backup | done |
-| Linking safety: 5 wrong codes per account or 20 overall lock linking for an hour (the overall limit also cancels every open code and warns the owners) | done |
+| Linking safety: 5 wrong codes lock that Messenger account out of linking for an hour; 20 wrong codes overall only warn the owners (a valid code always works, and nothing links until someone approves it in the portal). The portal's Owner alerts page shows the wrong tries and can clear them | done |
 | Owner commands are exact: the order number is always required, and anything else ("ok see you at 5") changes nothing | done |
-| No discounts through the bot: no tool takes a price, order notes can't mention one, and Sprinkle's replies are checked for discount promises and fake "confirmed" claims (one rewrite, then a safe reply) | done |
+| No discounts through the bot: no tool takes a price; order notes, design details, the pickup name and tap buttons can't mention one; Sprinkle's replies are checked for discount promises ("10% off", "on the house", "knock a dollar off" and so on, while honest refusals pass) and fake "confirmed" claims (one rewrite, then a safe reply) | done |
 | Milk Tea and Green Tea ask how sweet (Less sweet, Regular, More sweet); no drink comes with a topping, and Sprinkle offers toppings once, leading with tapioca pearls | done |
-| Free-text mixes are checked: counts must add up to the box, sprinkles only on icing flavors, Big Donuts only from the $2.09 donuts | done |
+| Free-text mixes are checked: counts must add up to the box, sprinkles only on icing flavors, Big Donuts only from the $2.09 donuts; "any" or "random" is accepted only on its own (store's choice), never to slip past these checks | done |
+| Filled Donut (Glazed, Chocolate Icing or Powdered Sugar outside; Bavarian Cream, Blueberry, Raspberry, Lemon or Strawberry jelly filling) is its own item, separate from the Long John ($2.09, a Big Donut) | done |
+| Store FAQ includes freshness: the staff start baking at 3 AM every day and nothing is left over | done |
 | Each reply's cart changes are all or nothing: an error part way through is undone, so a retry never adds items twice | done |
 | Meta's 24-hour rule for owner alerts: daily 👍 check-in sent inside the window; undeliverable alerts are held and sent when the owner next writes, and texted if no owner can be reached | done |
 | Menu editor in the portal (prices, items, add-ons, categories, flavors) | done |
@@ -112,7 +114,7 @@ Each is configurable in `.env` (or `data/*.json`) so the answer doesn't need a c
 
 | Question | Assumed for now | Setting |
 |---|---|---|
-| Real menu and prices | **Confirmed:** from the menu board; extras (meat $0.99, egg/cheese $0.50) are modifiers; biscuits and burritos are separate items at the same price; Twist, Long John and Icing donuts need a flavor; sprinkles only on icing flavors; "Big Donuts" = every single donut priced $2.09 | `data/menu.json` or the portal Menu page |
+| Real menu and prices | **Confirmed:** from the menu board; extras (meat $0.99, egg/cheese $0.50) are modifiers; biscuits and burritos are separate items at the same price; Twist, Long John and Icing donuts need a flavor; Filled Donut needs an outside and a filling; sprinkles only on icing flavors; "Big Donuts" = every single donut priced $2.09 | `data/menu.json` or the portal Menu page |
 | Pickup location | **Confirmed:** Town Donut Watson, Oak Point Plaza next to Subway, 35505 LA-16 #3C, Denham Springs, LA 70706 (shown on every summary and confirmation) | `data/business.json` |
 | Customer phone required | Yes | `REQUIRE_CUSTOMER_PHONE` |
 | When to ask owners "picked up?" | 30 min after pickup time | `PICKUP_CHECK_AFTER_MINUTES` (`0` = never) |

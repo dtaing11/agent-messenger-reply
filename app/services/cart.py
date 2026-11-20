@@ -109,7 +109,7 @@ def _pool_selection(conn: sqlite3.Connection, item: sqlite3.Row, c: custom_items
     question = (f"Which {c.count} {c.label} would you like? Pick any mix of: " + "; ".join(labels) + "."
                 if labels else f"Which {c.label} would you like?")
     low = raw.lower()
-    if not raw or not (any(n.lower() in low for n in names) or any(w in low for w in custom_items.ANY_MIX)):
+    if not raw or not (any(n.lower() in low for n in names) or custom_items._mentions_store_choice(low)):
         raise custom_items.MissingDetails([c.key], [question])
     if len(raw) > 200:
         raise CartError("Please keep the donut selection short, like: 2 Twist (Chocolate), 2 Cinnamon Roll, 2 Pinecone.")

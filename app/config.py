@@ -84,6 +84,9 @@ class Settings(BaseSettings):
     # "paused": messages are recorded but the bot never replies. Start paused until setup is done.
     bot_mode: Literal["paused", "live"] = "paused"
     public_base_url: str = ""  # e.g. https://orders.example.com (the tunnel hostname)
+    # Customer photos (design-donut references). Default: an "uploads" folder next to the database.
+    uploads_path: Path | None = None
+    photo_max_mb: int = Field(8, ge=1, le=25)
     master_key_path: Path = Path("./data/keys/master.key")  # encryption key for stored credentials
     admin_session_hours: int = Field(12, ge=1, le=168)
     admin_host: str = "127.0.0.1"

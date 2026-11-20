@@ -27,7 +27,7 @@ WINDOW = timedelta(hours=24)
 CODE_TTL = timedelta(minutes=15)
 CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no 0/O or 1/I to mix up; 32**8 ≈ 1.1e12 codes
 LINK_RE = re.compile(r"^\s*link\s*[:#]?\s*([a-z0-9]{4})[\s-]?([a-z0-9]{4})\s*[.!]?\s*$", re.IGNORECASE)
-FAILS_PER_ACCOUNT, FAILS_OVERALL, LOCKOUT = 5, 20, timedelta(hours=1)
+FAILS_PER_ACCOUNT, FAILS_OVERALL, LOCKOUT = 5, 20, timedelta(hours=1)  # FAILS_OVERALL only warns the owners
 
 KEEPALIVE_TEXT = ("Daily check-in: tap 👍 so I can keep sending you order alerts here. "
                   "Facebook only lets the Page message you within 24 hours of your last message.")
@@ -80,18 +80,18 @@ def _failures(conn: sqlite3.Connection, now: datetime, psid: str | None = None) 
 def link(conn: sqlite3.Connection, page_id: str, psid: str, code: str, now: datetime) -> sqlite3.Row:
     """Use a code: this Messenger account becomes an owner account waiting for approval in the
     portal. Raises LinkError (wrong code, too many tries)."""
+    # Wrong guesses are limited per Messenger account. Wrong codes from strangers never block a
+    # real owner: a valid code always works (and still needs approval in the portal).
     if _failures(conn, now, psid) >= FAILS_PER_ACCOUNT:
-        raise LinkError("Too many wrong codes from this account. Please wait an hour, then use a new code.")
-    if _failures(conn, now) >= FAILS_OVERALL:
-        raise LinkError("Linking is paused for an hour because of too many wrong codes. Make a new code in the portal later.")
+        raise LinkError("Too many wrong codes from this account. Please wait an hour, or ask someone to clear the "
+                        "lockout in the portal (Owner alerts), then use a new code.")
     code = code.replace("-", "").upper()
     row = conn.execute("SELECT * FROM owner_link_codes WHERE code_hash = ?", (_hash(code),)).fetchone()
     if row is None or row["used_at"] or from_db(row["expires_at"]) <= now:
         conn.execute("INSERT INTO owner_link_attempts (psid, ok, at) VALUES (?, 0, ?)", (psid, to_db(now)))
-        if _failures(conn, now) == FAILS_OVERALL:
-            conn.execute("UPDATE owner_link_codes SET used_at = ? WHERE used_at IS NULL", (to_db(now),))
-            raise LinkError("That code isn't valid. Linking is now paused for an hour.", alarm=True)
-        raise LinkError("That code isn't valid anymore. Make a new one in the portal (Owner alerts).")
+        # Many wrong codes overall: warn the owners once (the caller sends the alarm).
+        raise LinkError("That code isn't valid anymore. Make a new one in the portal (Owner alerts).",
+                        alarm=_failures(conn, now) == FAILS_OVERALL)
     if not conn.execute("UPDATE owner_link_codes SET used_at = ? WHERE code_hash = ? AND used_at IS NULL",
                         (to_db(now), row["code_hash"])).rowcount:
         raise LinkError("That code was already used.")
@@ -103,6 +103,20 @@ def link(conn: sqlite3.Connection, page_id: str, psid: str, code: str, now: date
         (page_id, psid, row["label"], to_db(now)),
     )
     return pending_for(conn, page_id, psid)
+
+
+def lockout_status(conn: sqlite3.Connection, now: datetime) -> dict:
+    """For the portal: wrong codes in the last hour, and which accounts are locked out."""
+    locked = conn.execute(
+        "SELECT psid, COUNT(*) AS n FROM owner_link_attempts WHERE ok = 0 AND at >= ? GROUP BY psid HAVING n >= ?",
+        (to_db(now - LOCKOUT), FAILS_PER_ACCOUNT),
+    ).fetchall()
+    return {"wrong_codes": _failures(conn, now), "locked_accounts": len(locked)}
+
+
+def clear_lockout(conn: sqlite3.Connection) -> int:
+    """Forget wrong link codes, so a locked-out owner can try again right away."""
+    return conn.execute("DELETE FROM owner_link_attempts WHERE ok = 0").rowcount
 
 
 def pending_for(conn: sqlite3.Connection, page_id: str, psid: str) -> sqlite3.Row | None:

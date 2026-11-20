@@ -17,7 +17,7 @@ from app.agent.prompts import system_prompt
 from app.config import Settings
 from app.integrations.openrouter import LLMError, chat_with_fallback
 from app.services import conversation as conv_svc
-from app.services import sessions
+from app.services import discounts, sessions
 from app.services.business import BusinessInfo
 from app.services.order import OrderSummary
 from app.timeutil import local
@@ -198,5 +198,6 @@ def _finish(ctx: tools.ToolContext, content: str, messages: list[dict] | None = 
             text = NOT_UNDERSTOOD
     # Buttons only make sense under a question; a summary brings its own, and a handoff ends the chat.
     quick = ctx.quick_replies if text and ctx.summary is None and not ctx.handoff_reason else ()
+    quick = tuple(q for q in quick if not discounts.mentions_discount(q))  # owners' rule: no discount buttons
     return AgentResult(text=text, summary=ctx.summary, handoff_reason=ctx.handoff_reason, tools_used=tuple(ctx.log),
                        quick_replies=quick)

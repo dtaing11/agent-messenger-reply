@@ -324,7 +324,7 @@ def test_twist_and_long_john_need_a_flavor(conn, customer_id):
     view = cart.add_item(conn, customer_id, "twist", 1, details={"flavor": "chocolate"})
     view = cart.add_item(conn, customer_id, "twist", 1, details={"flavor": "Glazed"})
     assert [l.details for l in view.lines] == [{"flavor": "Chocolate"}, {"flavor": "Glazed"}]
-    view = cart.add_item(conn, customer_id, "filled_donut_long_john", 1, details={"flavor": "maple"})
+    view = cart.add_item(conn, customer_id, "long_john", 1, details={"flavor": "maple"})
     assert view.lines[-1].details == {"flavor": "Maple"}
     with pytest.raises(cart.CartError):
         cart.add_item(conn, customer_id, "apple_fritter", 1, details={"flavor": "Maple"})
@@ -406,7 +406,7 @@ def test_big_donuts_are_every_209_donut(conn, customer_id, settings, biz):
 
     seed_menu(conn, ROOT / "data/menu.json")
     names = [r["name"] for r in menu.pool_items(conn, "donuts", 209)]
-    assert set(names) == {"Cinnamon Roll", "Pinecone", "Twist"}
+    assert set(names) == {"Cinnamon Roll", "Pinecone", "Twist", "Long John"}
     ctx = tools.ToolContext(conn, customer_id, settings, biz, NOW)
     res = asyncio.run(tools.execute(ctx, "search_menu", {"query": "half dozen big donuts"}))
     item = next(i for i in res["items"] if i["item_id"] == "half_dozen_big_donuts")

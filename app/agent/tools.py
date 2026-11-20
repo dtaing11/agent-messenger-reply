@@ -4,7 +4,6 @@ that only happens when the customer taps Confirm on the summary (handled in the 
 
 import json
 import logging
-import re
 import sqlite3
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -16,6 +15,7 @@ from app.services import cart as cart_svc
 from app.services import (
     custom_items,
     customers,
+    discounts,
     knowledge,
     menu,
     notify,
@@ -25,7 +25,7 @@ from app.services import (
 from app.services import order as order_svc
 from app.services.business import BusinessInfo, PickupValidation, validate_pickup_time
 from app.services.pricing import money
-from app.timeutil import from_db, local
+from app.timeutil import from_db, local, to_db
 
 log = logging.getLogger(__name__)
 
@@ -116,15 +116,15 @@ def _topping_offer(conn, item_id: str) -> str | None:
     lead = next((m for m in mods if "tapioca" in m["name"].lower()), mods[0] if mods else None)
     if lead is None:
         return None
-    return (f"No toppings were added. Offer toppings once for this drink, leading with {lead['name']} "
+    return (f"No toppings were added. Offer toppings once for this order, leading with {lead['name']} "
             f"(+{money(lead['price_delta_cents'])}, modifier_id {lead['id']}), which goes with almost every drink. "
             "Add one only if the customer says yes; if they say no, don't offer again.")
 
 
-# The owners' rule: the bot never gives discounts, so nothing it writes for the team may suggest one.
-DISCOUNT_WORDS = re.compile(
-    r"\b(discount\w*|coupons?|promo(?:tion)?s?|price ?match\w*|for free|on the house)\b"
-    r"|\d+\s*%|%\s*off\b|\$\s*\d+(?:\.\d+)?\s*off\b", re.I)
+# The owners' rule: the bot never gives discounts, so nothing it writes for the team or the
+# customer may suggest one (see services.discounts).
+NO_DISCOUNT_TEXT = ("That text mentions a discount or a free item. Sprinkle never gives discounts, so it can't go "
+                    "on the order. Prices are as listed on the menu.")
 
 # How each order status reads to the customer. A missed pickup is an owner-only record:
 # the assistant only ever sees "closed", the same as a picked-up order.
@@ -293,6 +293,8 @@ def _dispatch(ctx: ToolContext, name: str, a: dict) -> dict:
         if long := [o for o in opts if len(o) > messenger.QUICK_REPLY_TITLE_MAX]:
             raise ValueError(f"Each option must be {messenger.QUICK_REPLY_TITLE_MAX} characters or fewer, or Messenger cuts it off. "
                              f"Too long: {', '.join(repr(o) for o in long)}. Shorten them and call offer_choices again.")
+        if discounts.any_discount(opts):
+            raise ValueError("Buttons can't offer discounts, deals or free items. Sprinkle never gives discounts.")
         ctx.quick_replies = tuple(opts[:13])
         return {"ok": True, "note": "Buttons will appear under your reply. Still ask the question in your reply."}
     if name == "search_knowledge":
@@ -305,14 +307,21 @@ def _dispatch(ctx: ToolContext, name: str, a: dict) -> dict:
                 "pickup_note": "Messenger orders are picked up only at this store. Other Town Donut stores can't fill them.",
                 "phone": b.raw.get("phone"), "payment": b.raw.get("payment"), "price_note": b.raw.get("price_note"),
                 "hours": {d: (f"{h[0]:%-I:%M %p}-{h[1]:%-I:%M %p}" if h else "closed") for d, h in b.hours.items()},
-                "pickup_rules": {"min_notice_minutes": b.pickup.min_lead_minutes, "max_days_ahead": b.pickup.max_days_ahead}}
+                "last_pickup_time": b.last_pickup_text(),
+                "pickup_rules": {"min_notice_minutes": b.pickup.min_lead_minutes, "max_days_ahead": b.pickup.max_days_ahead,
+                                 "last_pickup": f"{b.pickup.last_pickup_before_close_minutes} minutes before closing"}}
     if name == "get_cart":
         return _cart_json(ctx)
+    if name in ("add_to_cart", "update_cart_item") and discounts.any_discount(a.get("details") or {}):
+        return {"error": NO_DISCOUNT_TEXT}
     if name == "add_to_cart":
         view = cart_svc.add_item(conn, cid, str(a["item_id"]), _whole(a["quantity"], low=1, high=100), a.get("modifier_ids") or None, a.get("details") or None)
         out = {"ok": True, "cart": _cart_json(ctx, view)}
         if not a.get("modifier_ids") and (tip := _topping_offer(conn, str(a["item_id"]))):
-            out["next_step"] = tip
+            # Once per order: only the first bubble tea brings the reminder.
+            if conn.execute("UPDATE carts SET topping_offered_at = ? WHERE id = ? AND topping_offered_at IS NULL",
+                            (to_db(ctx.now), view.cart_id)).rowcount:
+                out["next_step"] = tip
         return out
     if name == "update_cart_item":
         view = cart_svc.update_item(conn, cid, _whole(a["line_id"], "line_id"), _whole(a["quantity"], high=100), a.get("modifier_ids"), a.get("details"))
@@ -324,8 +333,8 @@ def _dispatch(ctx: ToolContext, name: str, a: dict) -> dict:
         return {"ok": pv.ok, "pickup_time": _fmt_local(pv.pickup_local, ctx.biz.timezone), "reason": pv.reason,
                 "suggestions": _suggestions(ctx, pv) or None}
     if name == "set_pickup_details":
-        if a.get("notes") and DISCOUNT_WORDS.search(str(a["notes"])):
-            return {"ok": False, "reason": "Notes can't mention discounts or price changes. Sprinkle never gives discounts."}
+        if discounts.any_discount([a.get("notes"), a.get("customer_name")]):
+            return {"ok": False, "reason": NO_DISCOUNT_TEXT}
         when = None
         if a.get("pickup_time"):
             when = _parse_local(ctx, str(a["pickup_time"]))

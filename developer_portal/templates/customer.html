@@ -40,6 +40,16 @@
   {% else %}<p class="muted">No orders yet.</p>{% endif %}
 </article>
 
+{% if photos %}
+<article>
+  <header><strong>Photos from this customer</strong></header>
+  <p class="small muted">Photos they sent on Messenger. Ones sent for a Special Design Donut are also on that order.</p>
+  <div class="thumbs">{% for ph in photos %}
+    <a href="/admin/photos/{{ ph.id }}" target="_blank" rel="noopener" title="Photo #{{ ph.id }}{% if ph.order_id %}, order #{{ ph.order_id }}{% endif %}"><img class="thumb" src="/admin/photos/{{ ph.id }}" alt="Photo #{{ ph.id }}"></a>
+  {% endfor %}</div>
+</article>
+{% endif %}
+
 <article>
   <header><strong>Recent messages</strong></header>
   {% for m in msgs %}

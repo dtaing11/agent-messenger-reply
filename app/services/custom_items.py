@@ -128,6 +128,29 @@ def canonical(details: dict) -> str:
 YES_NO = {"yes": "Yes", "y": "Yes", "true": "Yes", "with": "Yes", "with sprinkles": "Yes", "sprinkles": "Yes",
           "no": "No", "n": "No", "false": "No", "none": "No", "without": "No", "no sprinkles": "No", "plain": "No"}
 ANY_MIX = ("any", "assort", "surprise", "your choice", "store's choice", "stores choice", "mix them", "random")
+_STORE_WORDS = re.compile(
+    r"\b(?:any|anything|assort\w*|surprise|random\w*|whatever|store'?s|stores|chef'?s|dealer'?s|your|choice|choose|pick|"
+    r"mix|mixed|them|it|up|me|us|for|you|please|just|is|are|fine|good|ok|okay|all|the|a|of|kind|kinds|donuts?|"
+    r"doughnuts?|flavou?rs?|works|have|has|got|like|decide|best|sellers?|great)\b",
+    re.I,
+)
+
+
+def _mentions_store_choice(low: str) -> bool:
+    """Loose test for "they said something about a mix" (then the strict parser decides)."""
+    return bool(re.search(r"\b(?:any|assort\w*|surprise|random|your choice|store'?s choice|stores choice|mix them)\b", low))
+
+
+def says_store_choice(text: str) -> bool:
+    """True only when the text just asks the store to choose ("store's choice", "surprise me",
+    "any is fine") and names nothing else, so it can't carry extra items past the checks."""
+    low = " ".join(re.sub(r"[^\w']+", " ", text or "").split()).lower()
+    if not low or not re.search(r"\b(?:any|anything|assort\w*|surprise|random\w*|whatever|choice|choose|pick|mix)\b", low):
+        return False
+    return not _STORE_WORDS.sub(" ", low).strip()
+
+
+_CHOICE_FILLER = frozenset({"jelly", "filling", "filled", "with", "flavor", "flavour", "the", "a", "please"})
 
 
 @dataclass(frozen=True)
@@ -170,7 +193,17 @@ class Choice:
         if set(self.options) == {"Yes", "No"} and v in YES_NO:
             return YES_NO[v]
         hits = [o for o in self.options if v in o.lower()]
-        return hits[0] if len(hits) == 1 else None
+        if len(hits) == 1:
+            return hits[0]
+        # "powder sugar" -> Powdered Sugar, "strawberry jelly" -> Strawberry: every word the
+        # customer used starts a word of exactly one option (filler like "jelly" ignored).
+        words = [w for w in re.findall(r"[a-z']+", v) if w not in _CHOICE_FILLER]
+        if words:
+            hits = [o for o in self.options
+                    if all(any(ow.startswith(w) for ow in re.findall(r"[a-z']+", o.lower())) for w in words)]
+            if len(hits) == 1:
+                return hits[0]
+        return None
 
     def skipped_for(self, picked: dict) -> bool:
         return any(picked.get(k) in vals for k, vals in self.not_with)
@@ -232,7 +265,7 @@ def apply_choices(choices: list[Choice], item_name: str, details: dict) -> dict:
         if c.mix:
             text = " ".join(str(raw or "").split())
             low = text.lower()
-            if text and (any(o.lower() in low for o in c.options) or any(w in low for w in ANY_MIX)):
+            if text and (any(o.lower() in low for o in c.options) or _mentions_store_choice(low)):
                 if len(text) > 200:
                     raise ValueError("Please keep the mix short, like: 6 Chocolate Icing with sprinkles, 6 Glazed.")
                 picked[c.key] = check_mix(text, c, item_name)
@@ -379,8 +412,8 @@ def check_mix(text: str, c: Choice, item_name: str) -> str:
     """Validate a free-text flavor mix for a Mix Donuts box and return it in plain form.
     Raises MixError with what to fix."""
     total = int(c.count or 0)
-    if any(w in text.lower() for w in ANY_MIX) and not any(o.lower() in text.lower() for o in c.options):
-        return text  # "store's choice"
+    if says_store_choice(text):
+        return STORE_CHOICE  # stored as just that phrase, never the raw text
     sprinkle_ok = c.raw.get("sprinkles_on") or [o for o in c.options if "icing" in o.lower()]
     example = (f"{total // 2} {sprinkle_ok[0] if sprinkle_ok else c.options[0]} with sprinkles, "
                f"{total - total // 2} {c.options[0]}") if sprinkle_ok else f"{total // 2} {c.options[0]}, {total - total // 2} {c.options[-1]}"
@@ -389,8 +422,8 @@ def check_mix(text: str, c: Choice, item_name: str) -> str:
         raise MixError(f"Write the mix as counts and flavors, like: {example}.")
     for p in parts:
         name = _match_name(p.text, c.options)
-        if name is None and any(w in p.text.lower() for w in ANY_MIX):
-            name = STORE_CHOICE
+        if name is None and says_store_choice(p.text):
+            name = STORE_CHOICE  # e.g. "6 glazed, the rest your choice"
         if name is None:
             raise MixError(f"\"{p.text.strip() or text}\" isn't one of the {item_name} flavors "
                            f"({', '.join(c.options)}). Write the mix like: {example}.")
@@ -413,8 +446,8 @@ def check_pool_mix(text: str, c: Choice, items: list[tuple[str, list[str]]], oth
     total = int(c.count or 0)
     names = [n for n, _ in items]
     flavors = dict(items)
-    if any(w in text.lower() for w in ANY_MIX) and not any(n.lower() in text.lower() for n in names):
-        return text
+    if says_store_choice(text):
+        return STORE_CHOICE
     first = items[0]
     example = ", ".join(f"{total // len(items[:3]) if i < len(items[:3]) - 1 else total - (total // len(items[:3])) * (len(items[:3]) - 1)} "
                         f"{n}" + (f" ({fl[0]})" if fl else "") for i, (n, fl) in enumerate(items[:3])) if first else ""
@@ -427,7 +460,7 @@ def check_pool_mix(text: str, c: Choice, items: list[tuple[str, list[str]]], oth
     for p in parts:
         name = _match_name(p.text, names)
         if name is None:
-            if any(w in p.text.lower() for w in ANY_MIX):
+            if says_store_choice(p.text):
                 p.name = STORE_CHOICE
                 continue
             other = _match_name(p.text, other_names)

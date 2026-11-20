@@ -30,7 +30,7 @@ from app.integrations.messenger import (
     MessengerClient,
 )
 from app.services import conversation as conv_svc
-from app.services import notify, owner_accounts, owner_commands, sessions, turns
+from app.services import notify, owner_accounts, owner_commands, photos, sessions, turns
 from app.services import order as order_svc
 from app.services.business import BusinessInfo, load_business
 from app.settings.runtime import effective_settings, set_marker
@@ -66,6 +66,12 @@ async def default_agent(conn: sqlite3.Connection, customer_id: int, settings: Se
     return settings.placeholder_reply
 
 
+def is_sticker(msg: dict) -> bool:
+    """A like (👍) or sticker. Messenger sends these as image attachments with a sticker id."""
+    return bool(msg.get("sticker_id")) or any((a.get("payload") or {}).get("sticker_id")
+                                               for a in msg.get("attachments") or [])
+
+
 @dataclass(frozen=True)
 class _Ctx:
     """Everything one event is processed with: a pinned settings snapshot and its client."""
@@ -86,7 +92,9 @@ class MessageProcessor:
         responder: Responder | Callable[[Settings], Responder],
         agent: AgentHandler | None = None,
         secret_store: SecretStore | None = None,
+        fetch_photo: Callable[[str, int], Awaitable[bytes]] | None = None,
     ):
+        self._fetch_photo = fetch_photo or photos.fetch
         self.base_settings = settings
         self.biz = biz
         self._responder_factory = responder if callable(responder) and not hasattr(responder, "send_text") else (lambda s: responder)
@@ -140,27 +148,79 @@ class MessageProcessor:
 
         # A tapped option (offer_choices) counts as if the customer typed the full option.
         text = (qr_payload.removeprefix(PICK) if qr_payload else msg.get("text") or "").strip()
+        attachments = msg.get("attachments") or []
+        if not text and is_sticker(msg):
+            text = "👍"  # a like or sticker, not a photo to pass on
         if not text:
-            # Attachments, stickers, etc. are not supported: hand off to a person.
+            images = [a for a in attachments if a.get("type") == "image" and (a.get("payload") or {}).get("url")]
+            if images:
+                return await self._handle_photos(ctx, msg["mid"], images, paused)
+            # Voice notes, videos, files, etc. are not supported: hand off to a person.
             conv_svc.record_message(conn, cid, "customer", "[attachment]", msg["mid"])
             if not paused and conv_svc.get_conversation(conn, cid)["bot_enabled"]:
-                self._hand_off(ctx, "customer sent a photo or attachment", key=f"handoff:{msg['mid']}")
+                self._hand_off(ctx, "customer sent an attachment", key=f"handoff:{msg['mid']}")
                 await self._reply(ctx, "Thanks! I've passed this to our team, and someone will reply here soon.")
             return "done"
 
         conv_svc.record_message(conn, cid, "customer", text[:4000], msg["mid"])
         if paused or not conv_svc.get_conversation(conn, cid)["bot_enabled"]:
             return "done"  # paused or human handoff: stay silent
-        if await self._resend_saved_reply(ctx, msg["mid"]):
-            return "done"  # a retry after a failed send: don't run the AI (and change the cart) twice
-        sessions.maybe_start_session(conn, cid, msg["mid"], settings.session_idle_hours)
-        if turns.begin(conn, cid, msg["mid"]):
-            log.warning("retrying message for customer %s from its saved cart", cid)
-        result = await self.agent(conn, cid, settings, self.biz, now)
-        if isinstance(result, AgentResult) and result.error:
-            turns.rollback(conn, cid, msg["mid"])  # all or nothing: the AI failed part way
-        await self._deliver(ctx, msg["mid"], result)
+        await self._run_ai(ctx, msg["mid"])
         return "done"
+
+    async def _handle_photos(self, ctx: _Ctx, mid: str, images: list[dict], paused: bool) -> str:
+        """Owner's simple version (no image AI): save the photo. While ordering a Special Design
+        Donut it's kept with the order and the assistant carries on; otherwise a person takes over."""
+        conn, cid = ctx.conn, ctx.customer_id
+        saved, failed = [], []
+        for seq, a in enumerate(images[:5]):
+            done = photos.existing(conn, mid, seq)
+            if done is None:
+                try:
+                    data = await self._fetch_photo(a["payload"]["url"], ctx.settings.photo_max_mb * 1024 * 1024)
+                    done = photos.save(conn, ctx.settings, cid, mid, seq, data)
+                except photos.PhotoError as exc:
+                    done = photos.record_failure(conn, cid, mid, seq, str(exc))
+            (saved if done.path else failed).append(done)
+        if failed:
+            log.warning("could not keep %d photo(s) from customer %s: %s", len(failed), cid, failed[0].error)
+        ids = [p.id for p in saved]
+        conv = conv_svc.get_conversation(conn, cid)
+        for_design = bool(ids) and photos.design_context(conn, cid, conv["session_start_message_id"] or 0)
+        if for_design:
+            note = photos.history_note(ids)
+        elif ids:
+            note = f"[The customer sent a photo ({', '.join(f'#{i}' for i in ids)}).]"
+        else:
+            note = "[The customer sent a photo, but it couldn't be saved.]"
+        conv_svc.record_message(conn, cid, "customer", note, mid)
+        if paused or not conv["bot_enabled"]:
+            return "done"  # staff have the chat; the photo is in the portal for them
+        if for_design:
+            photos.attach_to_cart(conn, cid, ids)
+            await self._run_ai(ctx, mid)
+            return "done"
+        if await self._resend_saved_reply(ctx, mid):
+            return "done"
+        reason = "customer sent a photo" if ids else "customer sent a photo that couldn't be saved"
+        self._hand_off(ctx, reason, key=f"handoff:{mid}", attachments=[p.path for p in saved])
+        reply = ("Thanks for the photo! I've passed it to our team, and someone will reply here soon." if ids else
+                 "Sorry, I couldn't open that photo. I've let our team know, and someone will reply here soon.")
+        conv_svc.record_message(conn, cid, "assistant", reply, f"reply:{mid}")
+        await ctx.responder.send_text(ctx.psid, reply)
+        return "done"
+
+    async def _run_ai(self, ctx: _Ctx, mid: str) -> None:
+        conn, cid, settings = ctx.conn, ctx.customer_id, ctx.settings
+        if await self._resend_saved_reply(ctx, mid):
+            return  # a retry after a failed send: don't run the AI (and change the cart) twice
+        sessions.maybe_start_session(conn, cid, mid, settings.session_idle_hours)
+        if turns.begin(conn, cid, mid):
+            log.warning("retrying message for customer %s from its saved cart", cid)
+        result = await self.agent(conn, cid, settings, self.biz, ctx.now)
+        if isinstance(result, AgentResult) and result.error:
+            turns.rollback(conn, cid, mid)  # all or nothing: the AI failed part way
+        await self._deliver(ctx, mid, result)
 
     async def _handle_owner(self, conn: sqlite3.Connection, settings: Settings, event: queue.QueuedEvent,
                             now: datetime) -> str | None:
@@ -191,8 +251,9 @@ class MessageProcessor:
             except owner_accounts.LinkError as exc:
                 if exc.alarm:
                     notify.alert_owners(conn, settings, "owner_link_alarm",
-                                        "Town Donut bot: someone sent the Page many wrong owner link codes. Every open "
-                                        "link code was cancelled and linking is paused for an hour.",
+                                        "Town Donut bot: someone sent the Page many wrong owner link codes in the last "
+                                        "hour. Nothing is linked unless you approve it in the portal (Owner alerts), so "
+                                        "don't approve an account you don't recognize.",
                                         f"owner_link_alarm:{to_db(now)[:13]}", now=now, every_channel=True)
                 await responder.send_text(psid, str(exc))
                 return "done"
@@ -268,9 +329,10 @@ class MessageProcessor:
                     await ctx.responder.send_text(ctx.psid, text)
         return bool(rows)
 
-    def _hand_off(self, ctx: _Ctx, reason: str, key: str) -> None:
+    def _hand_off(self, ctx: _Ctx, reason: str, key: str, attachments: list[str] | None = None) -> None:
         conv_svc.set_bot_enabled(ctx.conn, ctx.customer_id, False, reason=reason[:200])
-        notify.alert_owners(ctx.conn, ctx.settings, "handoff", notify.handoff_sms(ctx.conn, ctx.customer_id, reason), key)
+        notify.alert_owners(ctx.conn, ctx.settings, "handoff", notify.handoff_sms(ctx.conn, ctx.customer_id, reason), key,
+                            attachments=attachments)
 
     async def _handle_customer_update(self, ctx: _Ctx, p: dict, event_key: str) -> str:
         """Order status message triggered by an owner (or expiry). Sent as UPDATE, only inside

@@ -15,7 +15,8 @@
       <td><a href="/admin/customers/{{ o.customer_id }}">{{ o.customer_name }}</a>
         {% if o.customer_phone %}<br><small>{{ o.customer_phone|phone }}</small>{% endif %}
         {% if o.no_shows %}<br><span class="badge down" title="Owner-only note">{{ o.no_shows }} missed pickup{{ 's' if o.no_shows > 1 }}</span>{% endif %}
-        {% if o.needs_review %} <span class="badge degraded">review</span>{% endif %}</td>
+        {% if o.needs_review %} <span class="badge degraded">review</span>{% endif %}
+        {% for pid in photos.get(o.id, []) %}<br><a href="/admin/photos/{{ pid }}" target="_blank" rel="noopener"><img class="thumb" src="/admin/photos/{{ pid }}" alt="Customer's reference photo"></a>{% endfor %}</td>
       <td>{{ o.pickup_time|localtime }}</td>
       <td class="num">{{ o.subtotal_cents|money }}</td>
       <td>{{ o.status|replace('_', ' ')|title }}{% if o.status in ('ACCEPTED', 'PREPARING', 'READY') and o.pickup_time <= now_db %}<br><small class="bad">pickup time passed</small>{% endif %}</td>

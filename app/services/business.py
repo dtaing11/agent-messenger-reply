@@ -15,6 +15,9 @@ class PickupRules:
     min_lead_minutes: int
     max_days_ahead: int
     slot_minutes: int
+    # Owner: the last pickup is 12:15 on a 12:30 closing day. A real rule, not a side effect
+    # of the slot size, so a smaller slot can't quietly allow 12:25.
+    last_pickup_before_close_minutes: int = 15
 
 
 @dataclass(frozen=True)
@@ -58,6 +61,22 @@ class BusinessInfo:
             lines.append(f"Map: {self.maps_url}")
         return lines
 
+    def last_pickup_on(self, day: date) -> time | None:
+        hours = self.hours_on(day)
+        if hours is None:
+            return None
+        close = datetime.combine(day, hours[1]) - timedelta(minutes=self.pickup.last_pickup_before_close_minutes)
+        return max(close.time(), hours[0])
+
+    def last_pickup_text(self) -> str:
+        """e.g. "12:15 PM" (or "Mon-Fri 12:15 PM; Sat 1:15 PM" if days differ)."""
+        times = {d: (datetime.combine(date.today(), h[1]) - timedelta(minutes=self.pickup.last_pickup_before_close_minutes))
+                 for d, h in self.hours.items() if h}
+        unique = {t.time() for t in times.values()}
+        if len(unique) == 1:
+            return f"{next(iter(unique)):%-I:%M %p}"
+        return "; ".join(f"{d.title()} {t:%-I:%M %p}" for d, t in times.items())
+
     def hours_on(self, day: date) -> tuple[time, time] | None:
         if day in self.closed_dates:
             return None
@@ -80,6 +99,7 @@ def parse_business(data: dict) -> BusinessInfo:
             min_lead_minutes=int(p.get("min_lead_minutes", 30)),
             max_days_ahead=int(p.get("max_days_ahead", 14)),
             slot_minutes=int(p.get("slot_minutes", 15)),
+            last_pickup_before_close_minutes=int(p.get("last_pickup_minutes_before_close", 15)),
         ),
         raw=data,
     )
@@ -138,10 +158,12 @@ def validate_pickup_time(biz: BusinessInfo, pickup: datetime, now: datetime, min
         reason = f"We take orders up to {biz.pickup.max_days_ahead} days ahead."
     else:
         hours = biz.hours_on(local.date())
-        if hours is None:
+        last = biz.last_pickup_on(local.date())
+        if hours is None or last is None:
             reason = "The store is closed that day."
-        elif not (hours[0] <= local.time().replace(tzinfo=None) < hours[1]):
-            reason = f"Pickup must be between {hours[0]:%-I:%M %p} and {hours[1]:%-I:%M %p} that day."
+        elif not (hours[0] <= local.time().replace(tzinfo=None) <= last):
+            reason = (f"Pickup must be between {hours[0]:%-I:%M %p} and {last:%-I:%M %p} that day "
+                      f"(the last pickup time; we close at {hours[1]:%-I:%M %p}).")
         elif local.minute % biz.pickup.slot_minutes or local.second or local.microsecond:
             reason = f"Pickup times are in {biz.pickup.slot_minutes}-minute steps."
 
@@ -168,8 +190,8 @@ def next_slots(biz: BusinessInfo, now: datetime, after: datetime | None = None, 
         hours = biz.hours_on(day)
         if hours:
             t = datetime.combine(day, hours[0], tzinfo=biz.tz)
-            close = datetime.combine(day, hours[1], tzinfo=biz.tz)
-            while t < close and len(out) < count:
+            last = datetime.combine(day, biz.last_pickup_on(day), tzinfo=biz.tz)
+            while t <= last and len(out) < count:
                 if t >= start:
                     out.append(t)
                 t += timedelta(minutes=step)

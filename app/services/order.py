@@ -19,7 +19,7 @@ from app.agent.state_machine import InvalidTransition, OrderStatus, assert_trans
 from app.config import Settings
 from app.database.connection import transaction
 from app.services import cart as cart_svc
-from app.services import customers, notify
+from app.services import customers, notify, photos
 from app.services.business import BusinessInfo, staffed_from, validate_pickup_time
 from app.services.phone import display as phone_display
 from app.services.pricing import money
@@ -206,9 +206,11 @@ def submit_order(
             (order_id, str(OrderStatus.PENDING_ACCEPTANCE)),
         )
         order = conn.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
+        photos.move_to_order(conn, view.cart_id, order_id)  # design reference photos go with the order
         notify.alert_owners(conn, settings, "new_order", format_owner_sms(conn, order, biz), f"order:{order_id}:new_order",
                             order_id=order_id, now=now, buttons=[[f"Accept #{order_id}", f"YES {order_id}"],
-                                                                 [f"Decline #{order_id}", f"NO {order_id}"]])
+                                                                 [f"Decline #{order_id}", f"NO {order_id}"]],
+                            attachments=[p["path"] for p in photos.for_order(conn, order_id)])
         conn.execute("UPDATE confirmation_tokens SET used_at = ? WHERE token = ?", (to_db(now), token))
         conn.execute(
             "UPDATE carts SET status = 'submitted', updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?",
@@ -320,6 +322,10 @@ def format_owner_sms(conn: sqlite3.Connection, order: sqlite3.Row, biz: Business
         lines += _detail_lines(json.loads(it["details_snapshot"]), indent="  ")
         if it["surcharge_pending"]:
             lines.append("  LONG NAME: add surcharge and tell the customer")
+    shared = photos.for_order(conn, order["id"])
+    if shared:
+        lines.append(f"Photo: the customer sent {len(shared)} reference photo{'s' if len(shared) > 1 else ''} "
+                     "(on Messenger alerts and in the portal under Orders)")
     lines.append("")
     if order["tax_cents"]:
         lines.append(f"Total: {money(order['total_cents'])} (incl. tax {money(order['tax_cents'])})")

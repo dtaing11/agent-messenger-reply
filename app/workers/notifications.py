@@ -18,7 +18,7 @@ import httpx
 from app.config import Settings
 from app.integrations import twilio
 from app.integrations.messenger import OWNER_CMD, MessengerClient
-from app.services import owner_accounts
+from app.services import owner_accounts, photos
 from app.timeutil import to_db
 
 log = logging.getLogger(__name__)
@@ -64,10 +64,19 @@ def still_current(conn: sqlite3.Connection, row: sqlite3.Row) -> tuple[str, list
             f"The earlier alert was:\n\n{row['body']}"), None
 
 
-async def _default_fb_sender(settings: Settings, psid: str, body: str, buttons: list[list[str]] | None) -> str:
-    """Owner alert on Messenger. UPDATE: a message the owner didn't just ask for, inside their window."""
+async def _default_fb_sender(settings: Settings, psid: str, body: str, buttons: list[list[str]] | None,
+                             attachments: list[str] | None = None) -> str:
+    """Owner alert on Messenger. UPDATE: a message the owner didn't just ask for, inside their window.
+    Customer photos go first, so the Accept/Decline buttons stay on the last message."""
     client = MessengerClient(settings)
     try:
+        for rel in attachments or []:
+            f = photos.file_for(settings, rel)
+            kind = photos.sniff(f.read_bytes()[:16]) if f else None
+            if f is None or kind is None:
+                log.warning("owner alert photo is missing from the uploads folder")
+                continue
+            await client.send_image_file(psid, f.read_bytes(), kind[0], f.name)
         if buttons:
             res = await client.send_choices(psid, body, [t for t, _ in buttons], messaging_type="UPDATE",
                                             payloads=[OWNER_CMD + c for _, c in buttons])
@@ -127,8 +136,11 @@ async def send_due(conn: sqlite3.Connection, settings: Settings, now: datetime, 
             counts["held"] += 1
             continue
         body, buttons = still_current(conn, row)
+        attachments = json.loads(row["attachments"]) if row["attachments"] else None
         try:
-            if fb:
+            if fb and attachments:
+                sid = await fb_sender(settings, row["recipient"], body, buttons, attachments=attachments)
+            elif fb:
                 sid = await fb_sender(settings, row["recipient"], body, buttons)
             else:
                 sid = await sender(settings, row["recipient"], body, _status_callback(settings))

@@ -1,5 +1,5 @@
 {
-  "_comment": "Town Donut & Breakfast (Denham Springs / Watson) menu, transcribed from the owner's menu board on 2026-11-19. Prices are before tax. Twist/Long John flavors and Community Coffee details from the owner, 2026-11-20. Biscuits and burritos are separate items at the same price (owner, 2026-11-20) Big Donuts = every single donut priced $2.09 (owner, 2026-11-20). Icing/Mix flavors and sprinkles rule (icing flavors only) from the owner, 2026-11-20. Bubble tea from the owner's drink board, 2026-11-20 (Oolong Milk Tea not offered for now) Toppings can go on any drink (owner).",
+  "_comment": "Town Donut & Breakfast (Denham Springs / Watson) menu, transcribed from the owner's menu board on 2026-11-19. Prices are before tax. Twist/Long John flavors and Community Coffee details from the owner, 2026-11-20. Biscuits and burritos are separate items at the same price (owner, 2026-11-20) Big Donuts = every single donut priced $2.09 (owner, 2026-11-20). Icing/Mix flavors and sprinkles rule (icing flavors only) from the owner, 2026-11-20. Bubble tea from the owner's drink board, 2026-11-20 (Oolong Milk Tea not offered for now) Toppings can go on any drink (owner). Filled Donut (outside + filling) and Long John ($2.09, so a Big Donut) are separate items (owner, 2026-11-20).",
   "categories": [
     {
       "id": "donuts_by_dozen",
@@ -206,11 +206,44 @@
       "description": ""
     },
     {
-      "id": "filled_donut_long_john",
-      "name": "Filled Donut/Long John",
+      "id": "filled_donut",
+      "name": "Filled Donut",
       "category": "donuts",
       "unit_label": "each",
       "price_cents": 179,
+      "max_quantity": 60,
+      "description": "Filled donut. Outside: Glazed, Chocolate Icing or Powdered Sugar. Filling: Bavarian Cream, or Blueberry, Raspberry, Lemon or Strawberry jelly. Any outside goes with any filling.",
+      "choices": [
+        {
+          "key": "outside",
+          "label": "Outside",
+          "options": [
+            "Glazed",
+            "Chocolate Icing",
+            "Powdered Sugar"
+          ],
+          "question": "Which outside would you like on the Filled Donut: Glazed, Chocolate Icing or Powdered Sugar?"
+        },
+        {
+          "key": "filling",
+          "label": "Filling",
+          "options": [
+            "Bavarian Cream",
+            "Blueberry",
+            "Raspberry",
+            "Lemon",
+            "Strawberry"
+          ],
+          "question": "Which filling would you like: Bavarian Cream, Blueberry, Raspberry, Lemon or Strawberry jelly?"
+        }
+      ]
+    },
+    {
+      "id": "long_john",
+      "name": "Long John",
+      "category": "donuts",
+      "unit_label": "each",
+      "price_cents": 209,
       "max_quantity": 60,
       "description": "Long John filled with Bavarian cream. Flavors: Chocolate or Maple.",
       "choices": [

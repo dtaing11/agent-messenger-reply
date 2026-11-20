@@ -72,8 +72,13 @@
     <button type="submit">Make a link code</button>
   </form>
   <div id="code-result"></div>
+  {% if lockout.wrong_codes %}
+  <p class="small">{{ lockout.wrong_codes }} wrong link code{{ 's' if lockout.wrong_codes != 1 }} in the last hour{% if lockout.locked_accounts %},
+    and {{ lockout.locked_accounts }} account{{ 's are' if lockout.locked_accounts != 1 else ' is' }} waiting out the hour{% endif %}.
+    <button class="secondary" hx-post="/admin/owners/link-lockout/clear" hx-target="#code-result">Clear wrong tries</button></p>
+  {% endif %}
   <ol class="small muted">
-    <li>Make a code here. It works once, for 15 minutes. After 5 wrong tries from one account, or 20 overall in an hour, linking pauses for an hour.</li>
+    <li>Make a code here. It works once, for 15 minutes. After 5 wrong tries, that Facebook account has to wait an hour. Wrong codes from other people never block a real code.</li>
     <li>From the owner's own Facebook account, send the code to the store's Page in Messenger, like <code>LINK ABCD-2345</code>.</li>
     <li>Reload this page and press <strong>Approve</strong> next to them. Nothing reaches them, and they can't change orders, until you do.</li>
     <li>They get a "You're linked" message, and the other owners get an FYI.</li>

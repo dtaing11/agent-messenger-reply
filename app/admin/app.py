@@ -19,7 +19,7 @@ from zoneinfo import ZoneInfo
 
 import httpx
 from fastapi import Depends, FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
@@ -33,7 +33,7 @@ from app.integrations import checks
 from app.agent.state_machine import OrderStatus
 from app.integrations import twilio
 from app.services import conversation as conv_svc
-from app.services import customers, menu_admin, notify, owner_accounts, owner_commands
+from app.services import customers, menu_admin, notify, owner_accounts, owner_commands, photos
 from app.services.business import load_business
 from app.services.phone import display as phone_display
 from app.services.pricing import money
@@ -583,16 +583,13 @@ def create_admin_app() -> FastAPI:
         if c is None:
             return RedirectResponse("/admin/customers", status_code=303)
         conv = conn.execute("SELECT * FROM conversations WHERE customer_id = ?", (customer_id,)).fetchone()
-        orders = conn.execute(
-            "SELECT * FROM orders WHERE customer_id = ? OR (customer_phone IS NOT NULL AND customer_phone = ?) ORDER BY id DESC",
-            (customer_id, c["phone"]),
-        ).fetchall()
+        orders = conn.execute("SELECT * FROM orders WHERE customer_id = ? ORDER BY id DESC", (customer_id,)).fetchall()
         msgs = conn.execute(
             "SELECT role, content, created_at FROM messages WHERE conversation_id = ? ORDER BY id DESC LIMIT 40",
             (conv["id"],),
         ).fetchall() if conv else []
         return page(request, "customer.html", user, c=c, conv=conv, orders=orders, msgs=list(reversed(msgs)),
-                    history=customers.pickup_history(conn, customer_id))
+                    history=customers.pickup_history(conn, customer_id), photos=photos.for_customer(conn, customer_id))
 
     @app.post("/admin/customers/{customer_id}/bot")
     async def customer_bot(customer_id: int, request: Request, conn=Depends(get_db), user=Depends(admin_user)):
@@ -618,7 +615,14 @@ def create_admin_app() -> FastAPI:
         return page(request, "owners.html", user, s=s, accounts=accounts, recent=recent, sms_failures=sms_failures,
                     labels={a["psid"]: a["label"] for a in accounts},
                     reachable=s.owner_alert_channel == "sms" or any(a["open"] and a["active"] and not a["pending"] for a in accounts),
-                    twilio_ready=twilio.configured(s), saved=request.query_params.get("saved"))
+                    twilio_ready=twilio.configured(s), saved=request.query_params.get("saved"),
+                    lockout=owner_accounts.lockout_status(conn, now))
+
+    @app.post("/admin/owners/link-lockout/clear")
+    async def owners_clear_lockout(request: Request, conn=Depends(get_db), user=Depends(admin_user)):
+        n = owner_accounts.clear_lockout(conn)
+        auth.audit(conn, user.username, "owner.link_lockout.clear", str(n), "ok")
+        return _back_to_owners(request, "Cleared. Anyone who was locked out can send a new link code now.")
 
     def _back_to_owners(request: Request, saved: str):
         target = "/admin/owners?" + urlencode({"saved": saved})
@@ -722,10 +726,27 @@ def create_admin_app() -> FastAPI:
             """SELECT o.id, o.customer_id, o.customer_name, o.customer_phone, o.pickup_time, o.total_cents, o.subtotal_cents,
                       o.status, o.needs_review, o.created_at, o.pickup_check_sent_at,
                       (SELECT COUNT(*) FROM orders p WHERE p.id != o.id AND p.status = 'NO_SHOW'
-                         AND (p.customer_id = o.customer_id OR (o.customer_phone IS NOT NULL AND p.customer_phone = o.customer_phone))) AS no_shows
+                         AND p.customer_id = o.customer_id) AS no_shows
                FROM orders o ORDER BY o.id DESC LIMIT 100"""
         ).fetchall()
-        return page(request, "orders.html", user, orders=rows, now_db=to_db(utcnow()))
+        shots: dict[int, list[int]] = {}
+        if rows:
+            marks = ",".join("?" * len(rows))
+            for r in conn.execute(f"SELECT id, order_id FROM customer_photos WHERE path IS NOT NULL AND order_id IN ({marks}) "
+                                  "ORDER BY id", [r["id"] for r in rows]):
+                shots.setdefault(r["order_id"], []).append(r["id"])
+        return page(request, "orders.html", user, orders=rows, now_db=to_db(utcnow()), photos=shots)
+
+    @app.get("/admin/photos/{photo_id}")
+    def photo_file(photo_id: int, conn=Depends(get_db), user=Depends(current_user), s=Depends(runtime_settings)):
+        """A customer's photo, for signed-in portal users only."""
+        row = conn.execute("SELECT path, mime FROM customer_photos WHERE id = ? AND path IS NOT NULL", (photo_id,)).fetchone()
+        f = photos.file_for(s, row["path"]) if row else None
+        if f is None:
+            return Response(status_code=404)
+        return FileResponse(f, media_type=row["mime"], headers={
+            "X-Content-Type-Options": "nosniff", "Cache-Control": "private, max-age=3600",
+            "Content-Security-Policy": "default-src 'none'", "Content-Disposition": "inline"})
 
     @app.get("/admin/audit")
     def audit_log(request: Request, conn=Depends(get_db), user=Depends(current_user)):

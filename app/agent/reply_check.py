@@ -11,19 +11,13 @@ import logging
 import re
 import sqlite3
 
+from app.services import discounts
+
 log = logging.getLogger(__name__)
 
-DISCOUNT = re.compile(
-    r"\d+\s*%\s*(?:off|discount)"
-    r"|\$\s*\d+(?:\.\d{2})?\s*off\b"
-    r"|\b(?:discount|coupon|promo(?:tion)?(?:\s+code)?)\s+(?:has been|is|was|will be|'s)\s+(?:applied|added|accepted|honou?red)"
-    r"|\b(?:apply|applied|add|added|honou?r|honou?red|give|gave)\s+(?:you\s+)?(?:a|the|your|that|this)\s+(?:\d+\s*%\s+)?(?:discount|coupon|promo)"
-    r"|\bon the house\b|\bfor free\b|\bfree of charge\b",
-    re.I,
-)
 CLAIM = re.compile(
     r"\border\b[^.!?\n]{0,40}?\b(?:is|has been|was|been|are|'s)\s+(?:now\s+)?"
-    r"(?:confirmed|accepted|placed|approved|booked|all set)\b"
+    r"(?:confirmed|accepted|placed|approved|booked)\b"
     r"|\b(?:i|we)(?:'ve| have)?\s+(?:confirmed|accepted|placed|booked|approved)\s+(?:your|the)\s+order\b",
     re.I,
 )
@@ -56,7 +50,7 @@ def _claims_confirmed(text: str) -> bool:
 
 def problems(conn: sqlite3.Connection, customer_id: int, text: str) -> list[str]:
     out = []
-    if DISCOUNT.search(text):
+    if discounts.mentions_discount(text):
         out.append("discount")
     if _claims_confirmed(text):
         marks = ",".join("?" * len(ACCEPTED_LIKE))
