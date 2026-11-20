@@ -471,3 +471,14 @@ def test_bubble_tea_flavors_and_toppings(conn, customer_id):
     for item, price in (("green_tea", 499), ("smoothie", 599), ("iced_coffee", 399)):
         assert menu.get_item(conn, item)["price_cents"] == price
         assert len(menu.get_modifiers(conn, item)) == 7
+
+
+def test_toppings_on_every_drink(conn):
+    from app.services import menu
+
+    seed_menu(conn, ROOT / "data/menu.json")
+    drinks = conn.execute("SELECT id FROM menu_items WHERE category IN ('drinks', 'bubble_tea') AND available = 1").fetchall()
+    assert len(drinks) > 4
+    for (d,) in drinks:
+        names = {m["name"] for m in menu.get_modifiers(conn, d)}
+        assert {"Tapioca Pearl", "Coffee Jelly"} <= names, d

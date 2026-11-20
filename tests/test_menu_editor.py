@@ -127,3 +127,19 @@ def test_menu_requires_csrf(logged_in):  # noqa: F811
     del logged_in.headers["X-CSRF-Token"]
     r = logged_in.post("/admin/menu/categories", data={"name": "X"})
     assert r.status_code in (403, 400)
+
+
+def test_file_import_sets_category_order(conn, tmp_path):
+    import json
+
+    from app.services.menu import seed_menu as seed
+
+    p = tmp_path / "m.json"
+    items = [{"id": "a", "name": "A", "category": "x", "price_cents": 100}, {"id": "b", "name": "B", "category": "y", "price_cents": 100}]
+    p.write_text(json.dumps({"categories": [{"id": "x", "name": "Ex"}, {"id": "y", "name": "Why"}], "items": items}))
+    seed(conn, p)
+    p.write_text(json.dumps({"categories": [{"id": "y", "name": "Why"}, {"id": "z", "name": "Zed"}, {"id": "x", "name": "Ex"}],
+                             "items": items}))
+    seed(conn, p)
+    order = [c["id"] for c in menu_admin.categories(conn) if c["id"] in ("x", "y", "z")]
+    assert order == ["y", "z", "x"]

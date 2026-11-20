@@ -64,13 +64,19 @@ def edited_in_portal(conn: sqlite3.Connection) -> bool:
 
 
 def ensure_categories(conn: sqlite3.Connection, named: dict[str, str] | None = None) -> None:
-    """Every item's category gets a row; names from the menu file are used for new ones."""
+    """Every item's category gets a row. Categories listed in the menu file (`named`, in
+    order) take the file's names and order; this only runs on a file import."""
     named = named or {}
-    used = [r[0] for r in conn.execute("SELECT DISTINCT category FROM menu_items ORDER BY category")]
-    for cat in list(named) + used:
+    for pos, (cat, name) in enumerate(named.items()):
+        conn.execute(
+            """INSERT INTO menu_categories (id, name, sort_order) VALUES (?, ?, ?)
+               ON CONFLICT(id) DO UPDATE SET name = excluded.name, sort_order = excluded.sort_order""",
+            (cat, name or default_category_name(cat), (pos + 1) * 10),
+        )
+    for (cat,) in conn.execute("SELECT DISTINCT category FROM menu_items ORDER BY category").fetchall():
         nxt = conn.execute("SELECT COALESCE(MAX(sort_order), 0) + 10 FROM menu_categories").fetchone()[0]
         conn.execute("INSERT OR IGNORE INTO menu_categories (id, name, sort_order) VALUES (?, ?, ?)",
-                     (cat, named.get(cat) or default_category_name(cat), nxt))
+                     (cat, default_category_name(cat), nxt))
 
 
 # ---------------------------------------------------------------- reading
