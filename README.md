@@ -6,7 +6,7 @@ the project plan (v3). This repository currently covers **Phase 1–2**: the Mes
 webhook, durable queue, SQLite schema, cart, deterministic totals and the order state machine.
 
 > `data/menu.json` is the real menu (transcribed from the owner's menu board, 2026-11-19).
-> Store hours are 4:30 AM to 12:30 PM daily. **Holiday closures and pickup lead time are still placeholders.**
+> Store hours are 4:30 AM to 12:30 PM every day, holidays included. **Pickup lead time and booking horizon are still placeholders.**
 
 ## What works today
 
@@ -65,7 +65,7 @@ Each is configurable in `.env` (or `data/*.json`) so the answer doesn't need a c
 | Question | Assumed for now | Setting |
 |---|---|---|
 | Real menu and prices | **Confirmed:** from the menu board, 40 items; extras (meat $0.99, egg/cheese $0.50) are modifiers; biscuit sandwiches have a free "Make it a burrito" option | `data/menu.json` |
-| Store hours, holidays, lead time | **Hours confirmed:** 4:30 AM–12:30 PM, assumed every day. Assumed: closed Dec 25 and Jan 1; 30 min lead; 14 days ahead; 15 min slots | `data/business.json` |
+| Store hours, holidays, lead time | **Confirmed:** 4:30 AM–12:30 PM every day, no holiday closures. Assumed: 30 min lead; 14 days ahead; 15 min slots | `data/business.json` |
 | Charge tax in the summary? | **Confirmed: no.** Summaries and owner SMS say prices are before tax and remind the customer tax is added at pickup | `TAX_RATE_BPS=0` |
 | Pending order expiry | Unanswered orders expire after 120 min | `PENDING_ORDER_EXPIRY_MINUTES` (`0` = never) |
 | Customer cancellation | Allowed while pending; after acceptance only the owner can cancel | `CUSTOMER_CAN_CANCEL_ACCEPTED` |

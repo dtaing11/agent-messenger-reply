@@ -41,3 +41,12 @@ def test_real_hours():
 
     biz = load_business(ROOT / "data/business.json")
     assert biz.hours_on(date(2026, 11, 22)) == (time(4, 30), time(12, 30))  # a Sunday
+
+
+def test_open_on_holidays():
+    from datetime import date
+
+    from app.services.business import load_business
+
+    biz = load_business(ROOT / "data/business.json")
+    assert biz.hours_on(date(2026, 12, 25)) is not None
