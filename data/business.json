@@ -1,0 +1,24 @@
+{
+  "_comment": "PLACEHOLDER business info. Hours, lead time and policies are illustrative only and must be confirmed by the owner.",
+  "name": "Town Donut & Breakfast",
+  "location": "watson",
+  "address": "TBD",
+  "phone": "TBD",
+  "timezone": "America/Chicago",
+  "hours": {
+    "monday":    {"open": "05:30", "close": "13:00"},
+    "tuesday":   {"open": "05:30", "close": "13:00"},
+    "wednesday": {"open": "05:30", "close": "13:00"},
+    "thursday":  {"open": "05:30", "close": "13:00"},
+    "friday":    {"open": "05:30", "close": "13:00"},
+    "saturday":  {"open": "06:00", "close": "13:00"},
+    "sunday":    null
+  },
+  "closed_dates": ["2026-12-25", "2027-01-01"],
+  "pickup": {
+    "min_lead_minutes": 30,
+    "max_days_ahead": 14,
+    "slot_minutes": 15
+  },
+  "payment": "Payment at pickup. We do not take card details over Messenger."
+}
