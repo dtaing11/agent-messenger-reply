@@ -3,8 +3,9 @@
 The backend already makes sure the model can't set a price, give a discount or submit an
 order. This catches the words: a reply that promises a discount (the owners' rule is that
 the bot never gives one), or says an order is confirmed when the team hasn't accepted any.
-Such a reply gets one rewrite; if it still breaks the rule, a safe fixed reply goes out
-instead. Dollar amounts that match nothing known are only logged.
+It also catches calling the Iced Coffee "Community Coffee" (it's the house blend; only Coffee
+and Cappuccino are Community Coffee). Such a reply gets one rewrite; if it still breaks the
+rule, a safe fixed reply goes out instead. Dollar amounts that match nothing known are only logged.
 """
 
 import logging
@@ -23,6 +24,9 @@ CLAIM = re.compile(
 )
 _CONDITIONAL = re.compile(r"\b(?:once|when|after|until|till|if|as soon as|before)\b[^.!?\n]*$", re.I)
 _NEGATED = re.compile(r"\b(?:not|never|yet to)\b|n't\b", re.I)
+_ICED = re.compile(r"\bice[d]?\s+coffees?\b", re.I)
+_COMMUNITY = re.compile(r"\bcommunity\s+coffee\b", re.I)
+_BLEND_CLAUSES = re.compile(r"[.!?;\n]+|\bbut\b|\bwhile\b|\bwhereas\b|\bhowever\b", re.I)
 MONEY = re.compile(r"\$\s*(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)")
 ACCEPTED_LIKE = ("ACCEPTED", "PREPARING", "READY", "COMPLETED")
 
@@ -32,10 +36,13 @@ REWRITE = {
     "confirmed": ("The team hasn't accepted any order for this customer, so never say an order is confirmed, accepted "
                   "or placed. If they confirmed a summary, say it was sent to the team and they'll get a message here "
                   "once it's accepted. Rewrite your reply."),
+    "blend": ("Our Iced Coffee is made with our house blend, not Community Coffee. Only Coffee and Cappuccino are "
+              "Community Coffee. Rewrite your reply."),
 }
 FALLBACK = {
     "discount": "Sorry, we don't offer discounts or coupons through Messenger. Prices are as listed on our menu.",
     "confirmed": "Our team reviews every order and will message you here once it's accepted.",
+    "blend": "Just so you know, our Iced Coffee is made with our house blend. Coffee and Cappuccino are made with Community Coffee.",
 }
 
 
@@ -48,10 +55,22 @@ def _claims_confirmed(text: str) -> bool:
     return False
 
 
+def _iced_called_community(text: str) -> bool:
+    """"Our iced coffee is Community Coffee" yes; "the iced coffee isn't Community Coffee" or
+    "Coffee is Community Coffee while iced coffee is our house blend" no."""
+    for clause in _BLEND_CLAUSES.split(text or ""):
+        if (_ICED.search(clause) and _COMMUNITY.search(clause) and not _NEGATED.search(clause)
+                and "house blend" not in clause.lower()):
+            return True
+    return False
+
+
 def problems(conn: sqlite3.Connection, customer_id: int, text: str) -> list[str]:
     out = []
     if discounts.mentions_discount(text):
         out.append("discount")
+    if _iced_called_community(text):
+        out.append("blend")
     if _claims_confirmed(text):
         marks = ",".join("?" * len(ACCEPTED_LIKE))
         accepted = conn.execute(f"SELECT 1 FROM orders WHERE customer_id = ? AND status IN ({marks}) LIMIT 1",

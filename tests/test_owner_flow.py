@@ -488,7 +488,9 @@ def test_bubble_tea_flavors_and_toppings(conn, customer_id):
         assert len(menu.get_modifiers(conn, item)) == 7
 
 
-def test_toppings_on_every_drink(conn):
+def test_toppings_only_on_the_bubble_tea_drinks(conn):
+    """Owner, 2026-11-20 (replacing "toppings on any drink"): only Green Tea, Milk Tea, Iced Coffee
+    and Smoothie take toppings."""
     from app.services import menu
 
     seed_menu(conn, ROOT / "data/menu.json")
@@ -496,4 +498,7 @@ def test_toppings_on_every_drink(conn):
     assert len(drinks) > 4
     for (d,) in drinks:
         names = {m["name"] for m in menu.get_modifiers(conn, d)}
-        assert {"Tapioca Pearl", "Coffee Jelly"} <= names, d
+        if d in ("green_tea", "milk_tea", "iced_coffee", "smoothie"):
+            assert {"Tapioca Pearl", "Coffee Jelly"} <= names, d
+        else:
+            assert not names, d

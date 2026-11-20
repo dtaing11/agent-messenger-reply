@@ -1,5 +1,5 @@
 {
-  "_comment": "Town Donut & Breakfast (Denham Springs / Watson) menu, transcribed from the owner's menu board on 2026-11-19. Prices are before tax. Twist/Long John flavors and Community Coffee details from the owner, 2026-11-20. Biscuits and burritos are separate items at the same price (owner, 2026-11-20) Big Donuts = every single donut priced $2.09 (owner, 2026-11-20). Icing/Mix flavors and sprinkles rule (icing flavors only) from the owner, 2026-11-20. Bubble tea from the owner's drink board, 2026-11-20 (Oolong Milk Tea not offered for now) Toppings can go on any drink (owner). Filled Donut (outside + filling) and Long John ($2.09, so a Big Donut) are separate items (owner, 2026-11-20).",
+  "_comment": "Town Donut & Breakfast (Denham Springs / Watson) menu, transcribed from the owner's menu board on 2026-11-19. Prices are before tax. Twist/Long John flavors and Community Coffee details from the owner, 2026-11-20. Biscuits and burritos are separate items at the same price (owner, 2026-11-20) Big Donuts = every single donut priced $2.09 (owner, 2026-11-20). Icing/Mix flavors and sprinkles rule (icing flavors only) from the owner, 2026-11-20. Bubble tea from the owner's drink board, 2026-11-20 (Oolong Milk Tea not offered for now) Filled Donut (outside + filling) and Long John ($2.09, so a Big Donut) are separate items (owner, 2026-11-20). Toppings only go on Green Tea, Milk Tea, Iced Coffee and Smoothie (the Bubble Tea drinks), not on other drinks; Iced Coffee is the house blend, not Community Coffee (owner, 2026-11-20).",
   "categories": [
     {
       "id": "donuts_by_dozen",
@@ -759,44 +759,7 @@
       "price_cents": 415,
       "max_quantity": 30,
       "description": "Milk, large size.",
-      "search_terms": "milk, big milk, glass of milk",
-      "modifiers": [
-        {
-          "id": "large_milk_coconut_jelly",
-          "name": "Coconut Jelly",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "large_milk_mango_bursting_boba",
-          "name": "Mango Bursting Boba",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "large_milk_peach_bursting_boba",
-          "name": "Peach Bursting Boba",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "large_milk_passion_bursting_boba",
-          "name": "Passion Fruit Bursting Boba",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "large_milk_strawberry_bursting_boba",
-          "name": "Strawberry Bursting Boba",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "large_milk_tapioca_pearl",
-          "name": "Tapioca Pearl",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "large_milk_coffee_jelly",
-          "name": "Coffee Jelly",
-          "price_delta_cents": 125
-        }
-      ]
+      "search_terms": "milk, big milk, glass of milk"
     },
     {
       "id": "medium_milk",
@@ -806,44 +769,7 @@
       "price_cents": 249,
       "max_quantity": 30,
       "description": "Milk, medium size.",
-      "search_terms": "milk, glass of milk",
-      "modifiers": [
-        {
-          "id": "medium_milk_coconut_jelly",
-          "name": "Coconut Jelly",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "medium_milk_mango_bursting_boba",
-          "name": "Mango Bursting Boba",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "medium_milk_peach_bursting_boba",
-          "name": "Peach Bursting Boba",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "medium_milk_passion_bursting_boba",
-          "name": "Passion Fruit Bursting Boba",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "medium_milk_strawberry_bursting_boba",
-          "name": "Strawberry Bursting Boba",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "medium_milk_tapioca_pearl",
-          "name": "Tapioca Pearl",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "medium_milk_coffee_jelly",
-          "name": "Coffee Jelly",
-          "price_delta_cents": 125
-        }
-      ]
+      "search_terms": "milk, glass of milk"
     },
     {
       "id": "small_milk",
@@ -853,44 +779,7 @@
       "price_cents": 165,
       "max_quantity": 30,
       "description": "Milk, small size.",
-      "search_terms": "milk, kids milk, little milk",
-      "modifiers": [
-        {
-          "id": "small_milk_coconut_jelly",
-          "name": "Coconut Jelly",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "small_milk_mango_bursting_boba",
-          "name": "Mango Bursting Boba",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "small_milk_peach_bursting_boba",
-          "name": "Peach Bursting Boba",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "small_milk_passion_bursting_boba",
-          "name": "Passion Fruit Bursting Boba",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "small_milk_strawberry_bursting_boba",
-          "name": "Strawberry Bursting Boba",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "small_milk_tapioca_pearl",
-          "name": "Tapioca Pearl",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "small_milk_coffee_jelly",
-          "name": "Coffee Jelly",
-          "price_delta_cents": 125
-        }
-      ]
+      "search_terms": "milk, kids milk, little milk"
     },
     {
       "id": "soft_drink",
@@ -900,44 +789,7 @@
       "price_cents": 259,
       "max_quantity": 30,
       "description": "A soft drink (soda).",
-      "search_terms": "soda, pop, soda pop, cold drink, fizzy drink, soft drinks",
-      "modifiers": [
-        {
-          "id": "soft_drink_coconut_jelly",
-          "name": "Coconut Jelly",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "soft_drink_mango_bursting_boba",
-          "name": "Mango Bursting Boba",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "soft_drink_peach_bursting_boba",
-          "name": "Peach Bursting Boba",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "soft_drink_passion_bursting_boba",
-          "name": "Passion Fruit Bursting Boba",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "soft_drink_strawberry_bursting_boba",
-          "name": "Strawberry Bursting Boba",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "soft_drink_tapioca_pearl",
-          "name": "Tapioca Pearl",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "soft_drink_coffee_jelly",
-          "name": "Coffee Jelly",
-          "price_delta_cents": 125
-        }
-      ]
+      "search_terms": "soda, pop, soda pop, cold drink, fizzy drink, soft drinks"
     },
     {
       "id": "energy_drink",
@@ -947,44 +799,7 @@
       "price_cents": 335,
       "max_quantity": 30,
       "description": "An energy drink.",
-      "search_terms": "energy drinks, caffeine, energy boost",
-      "modifiers": [
-        {
-          "id": "energy_drink_coconut_jelly",
-          "name": "Coconut Jelly",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "energy_drink_mango_bursting_boba",
-          "name": "Mango Bursting Boba",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "energy_drink_peach_bursting_boba",
-          "name": "Peach Bursting Boba",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "energy_drink_passion_bursting_boba",
-          "name": "Passion Fruit Bursting Boba",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "energy_drink_strawberry_bursting_boba",
-          "name": "Strawberry Bursting Boba",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "energy_drink_tapioca_pearl",
-          "name": "Tapioca Pearl",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "energy_drink_coffee_jelly",
-          "name": "Coffee Jelly",
-          "price_delta_cents": 125
-        }
-      ]
+      "search_terms": "energy drinks, caffeine, energy boost"
     },
     {
       "id": "juice_minute_maid",
@@ -994,44 +809,7 @@
       "price_cents": 259,
       "max_quantity": 30,
       "description": "Minute Maid juice.",
-      "search_terms": "juice, fruit juice, minute maid",
-      "modifiers": [
-        {
-          "id": "juice_minute_maid_coconut_jelly",
-          "name": "Coconut Jelly",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "juice_minute_maid_mango_bursting_boba",
-          "name": "Mango Bursting Boba",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "juice_minute_maid_peach_bursting_boba",
-          "name": "Peach Bursting Boba",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "juice_minute_maid_passion_bursting_boba",
-          "name": "Passion Fruit Bursting Boba",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "juice_minute_maid_strawberry_bursting_boba",
-          "name": "Strawberry Bursting Boba",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "juice_minute_maid_tapioca_pearl",
-          "name": "Tapioca Pearl",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "juice_minute_maid_coffee_jelly",
-          "name": "Coffee Jelly",
-          "price_delta_cents": 125
-        }
-      ]
+      "search_terms": "juice, fruit juice, minute maid"
     },
     {
       "id": "coffee",
@@ -1041,44 +819,7 @@
       "price_cents": 259,
       "max_quantity": 30,
       "description": "Made with Community Coffee.",
-      "search_terms": "hot coffee, cup of coffee, black coffee, cup of joe, community coffee, cofee, coffe, drip coffee",
-      "modifiers": [
-        {
-          "id": "coffee_coconut_jelly",
-          "name": "Coconut Jelly",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "coffee_mango_bursting_boba",
-          "name": "Mango Bursting Boba",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "coffee_peach_bursting_boba",
-          "name": "Peach Bursting Boba",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "coffee_passion_bursting_boba",
-          "name": "Passion Fruit Bursting Boba",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "coffee_strawberry_bursting_boba",
-          "name": "Strawberry Bursting Boba",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "coffee_tapioca_pearl",
-          "name": "Tapioca Pearl",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "coffee_coffee_jelly",
-          "name": "Coffee Jelly",
-          "price_delta_cents": 125
-        }
-      ]
+      "search_terms": "hot coffee, cup of coffee, black coffee, cup of joe, community coffee, cofee, coffe, drip coffee"
     },
     {
       "id": "cappuccino",
@@ -1088,44 +829,7 @@
       "price_cents": 335,
       "max_quantity": 30,
       "description": "Made with Community Coffee.",
-      "search_terms": "capuccino, cappucino, capachino, foamy coffee, community coffee",
-      "modifiers": [
-        {
-          "id": "cappuccino_coconut_jelly",
-          "name": "Coconut Jelly",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "cappuccino_mango_bursting_boba",
-          "name": "Mango Bursting Boba",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "cappuccino_peach_bursting_boba",
-          "name": "Peach Bursting Boba",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "cappuccino_passion_bursting_boba",
-          "name": "Passion Fruit Bursting Boba",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "cappuccino_strawberry_bursting_boba",
-          "name": "Strawberry Bursting Boba",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "cappuccino_tapioca_pearl",
-          "name": "Tapioca Pearl",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "cappuccino_coffee_jelly",
-          "name": "Coffee Jelly",
-          "price_delta_cents": 125
-        }
-      ]
+      "search_terms": "capuccino, cappucino, capachino, foamy coffee, community coffee"
     },
     {
       "id": "water",
@@ -1135,44 +839,7 @@
       "price_cents": 165,
       "max_quantity": 30,
       "description": "Water.",
-      "search_terms": "agua, h2o, drinking water",
-      "modifiers": [
-        {
-          "id": "water_coconut_jelly",
-          "name": "Coconut Jelly",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "water_mango_bursting_boba",
-          "name": "Mango Bursting Boba",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "water_peach_bursting_boba",
-          "name": "Peach Bursting Boba",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "water_passion_bursting_boba",
-          "name": "Passion Fruit Bursting Boba",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "water_strawberry_bursting_boba",
-          "name": "Strawberry Bursting Boba",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "water_tapioca_pearl",
-          "name": "Tapioca Pearl",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "water_coffee_jelly",
-          "name": "Coffee Jelly",
-          "price_delta_cents": 125
-        }
-      ]
+      "search_terms": "agua, h2o, drinking water"
     },
     {
       "id": "tummy_yummy",
@@ -1182,44 +849,7 @@
       "price_cents": 175,
       "max_quantity": 30,
       "description": "Tummy Yummy fruit drink.",
-      "search_terms": "kids drink, kids juice, juice drink",
-      "modifiers": [
-        {
-          "id": "tummy_yummy_coconut_jelly",
-          "name": "Coconut Jelly",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "tummy_yummy_mango_bursting_boba",
-          "name": "Mango Bursting Boba",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "tummy_yummy_peach_bursting_boba",
-          "name": "Peach Bursting Boba",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "tummy_yummy_passion_bursting_boba",
-          "name": "Passion Fruit Bursting Boba",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "tummy_yummy_strawberry_bursting_boba",
-          "name": "Strawberry Bursting Boba",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "tummy_yummy_tapioca_pearl",
-          "name": "Tapioca Pearl",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "tummy_yummy_coffee_jelly",
-          "name": "Coffee Jelly",
-          "price_delta_cents": 125
-        }
-      ]
+      "search_terms": "kids drink, kids juice, juice drink"
     },
     {
       "id": "starbucks",
@@ -1229,44 +859,7 @@
       "price_cents": 315,
       "max_quantity": 30,
       "description": "A Starbucks coffee drink.",
-      "search_terms": "starbuck, starbucks drink, bottled coffee, cold coffee",
-      "modifiers": [
-        {
-          "id": "starbucks_coconut_jelly",
-          "name": "Coconut Jelly",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "starbucks_mango_bursting_boba",
-          "name": "Mango Bursting Boba",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "starbucks_peach_bursting_boba",
-          "name": "Peach Bursting Boba",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "starbucks_passion_bursting_boba",
-          "name": "Passion Fruit Bursting Boba",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "starbucks_strawberry_bursting_boba",
-          "name": "Strawberry Bursting Boba",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "starbucks_tapioca_pearl",
-          "name": "Tapioca Pearl",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "starbucks_coffee_jelly",
-          "name": "Coffee Jelly",
-          "price_delta_cents": 125
-        }
-      ]
+      "search_terms": "starbuck, starbucks drink, bottled coffee, cold coffee"
     },
     {
       "id": "prime",
@@ -1276,44 +869,7 @@
       "price_cents": 280,
       "max_quantity": 30,
       "description": "Prime drink.",
-      "search_terms": "prime hydration, prime drink, sports drink",
-      "modifiers": [
-        {
-          "id": "prime_coconut_jelly",
-          "name": "Coconut Jelly",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "prime_mango_bursting_boba",
-          "name": "Mango Bursting Boba",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "prime_peach_bursting_boba",
-          "name": "Peach Bursting Boba",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "prime_passion_bursting_boba",
-          "name": "Passion Fruit Bursting Boba",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "prime_strawberry_bursting_boba",
-          "name": "Strawberry Bursting Boba",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "prime_tapioca_pearl",
-          "name": "Tapioca Pearl",
-          "price_delta_cents": 80
-        },
-        {
-          "id": "prime_coffee_jelly",
-          "name": "Coffee Jelly",
-          "price_delta_cents": 125
-        }
-      ]
+      "search_terms": "prime hydration, prime drink, sports drink"
     },
     {
       "id": "special_design_donut",
@@ -1552,8 +1108,8 @@
       "unit_label": "each",
       "price_cents": 399,
       "max_quantity": 20,
-      "description": "Bubble tea menu. Toppings (add any number): Coconut Jelly, Mango, Peach, Passion Fruit or Strawberry Bursting Boba, Tapioca Pearl (+$0.80 each), Coffee Jelly (+$1.25).",
-      "search_terms": "cold coffee, ice coffee, iced coffe, caramel coffee, vanilla coffee, boba coffee",
+      "description": "Iced coffee made with our house blend (not Community Coffee). Toppings (add any number): Coconut Jelly, Mango, Peach, Passion Fruit or Strawberry Bursting Boba, Tapioca Pearl (+$0.80 each), Coffee Jelly (+$1.25).",
+      "search_terms": "cold coffee, ice coffee, iced coffe, caramel coffee, vanilla coffee, boba coffee, house blend",
       "choices": [
         {
           "key": "flavor",
