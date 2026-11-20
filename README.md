@@ -5,8 +5,8 @@ Messenger, builds pickup orders, and texts the owners for acceptance. Full scope
 the project plan (v3). This repository currently covers **Phase 1–2**: the Messenger
 webhook, durable queue, SQLite schema, cart, deterministic totals and the order state machine.
 
-> **Menu, prices, hours and tax in `data/` are placeholders.** Replace them with the owner's
-> real values before launch.
+> `data/menu.json` is the real menu (transcribed from the owner's menu board, 2026-11-19).
+> **Store hours and pickup rules in `data/business.json` are still placeholders.**
 
 ## What works today
 
@@ -64,9 +64,9 @@ Each is configurable in `.env` (or `data/*.json`) so the answer doesn't need a c
 
 | Question | Assumed for now | Setting |
 |---|---|---|
-| Real menu and prices | Placeholder items | `data/menu.json` |
+| Real menu and prices | **Confirmed:** from the menu board, 40 items; extras (meat $0.99, egg/cheese $0.50) are modifiers; biscuit sandwiches have a free "Make it a burrito" option | `data/menu.json` |
 | Store hours, holidays, lead time | Mon–Fri 5:30–13:00, Sat 6:00–13:00, Sun closed; 30 min lead; 14 days ahead; 15 min slots | `data/business.json` |
-| Charge tax in the summary? | Off; summaries say "before tax" | `TAX_RATE_BPS` (e.g. `825`) |
+| Charge tax in the summary? | **Confirmed: no.** Summaries and owner SMS say prices are before tax and remind the customer tax is added at pickup | `TAX_RATE_BPS=0` |
 | Pending order expiry | Unanswered orders expire after 120 min | `PENDING_ORDER_EXPIRY_MINUTES` (`0` = never) |
 | Customer cancellation | Allowed while pending; after acceptance only the owner can cancel | `CUSTOMER_CAN_CANCEL_ACCEPTED` |
 | Owner phones | **Confirmed: two.** Every number gets the order SMS and may send commands | `OWNER_PHONE_NUMBERS` (comma-separated) |
@@ -89,6 +89,6 @@ app/
   integrations/messenger.py  Send API client
   services/                menu, cart, pricing, business hours, orders, conversations
   database/                connection, migration runner, migrations/*.sql
-data/                      placeholder menu.json + business.json (DB files are git-ignored)
-tests/                     pytest suite
+data/                      real menu.json, business.json (hours still placeholder; DB files are git-ignored)
+tests/                     pytest suite (uses tests/fixtures/menu.json, not the real menu)
 ```

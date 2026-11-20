@@ -35,6 +35,7 @@ def test_summary_text_matches_plan_example(conn, ready_cart, biz, settings):
     assert "6 x Sausage Kolache — $15.00" in s.text
     assert "Subtotal: $39.00 before tax" in s.text
     assert "Pickup: Thu Nov 19 at 7:30 AM" in s.text
+    assert order_svc.TAX_REMINDER in s.text
     assert s.total_cents == 3900
 
 
@@ -42,6 +43,7 @@ def test_summary_with_tax(conn, ready_cart, biz, settings):
     settings.tax_rate_bps = 825
     s = order_svc.present_order_summary(conn, ready_cart, biz, settings, NOW)
     assert "Tax: $3.22" in s.text and "Total: $42.22" in s.text
+    assert order_svc.TAX_REMINDER not in s.text
 
 
 def test_submit_creates_order_items_event_and_one_sms_per_owner(conn, ready_cart, biz, settings):
@@ -55,6 +57,7 @@ def test_submit_creates_order_items_event_and_one_sms_per_owner(conn, ready_cart
     body = conn.execute("SELECT body FROM notifications LIMIT 1").fetchone()[0]
     assert f"NEW ORDER #{o['id']}" in body and f"Reply YES {o['id']}" in body
     assert "Pickup: Nov 19, 7:30 AM CST" in body
+    assert "Subtotal: $39.00 (before tax)" in body
     # Cart is closed and a new one starts empty.
     assert cart.view_cart(conn, ready_cart).is_empty
 

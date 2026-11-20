@@ -19,7 +19,7 @@ def settings(tmp_path) -> Settings:
     return Settings(
         _env_file=None,
         database_path=tmp_path / "test.db",
-        menu_path=ROOT / "data/menu.json",
+        menu_path=ROOT / "tests/fixtures/menu.json",
         business_path=ROOT / "data/business.json",
         meta_app_secret="test-secret",
         meta_verify_token="verify-me",

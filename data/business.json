@@ -1,24 +1,47 @@
 {
-  "_comment": "PLACEHOLDER business info. Hours, lead time and policies are illustrative only and must be confirmed by the owner.",
+  "_comment": "Address and phone are from the owner's menu board. HOURS, closed dates and pickup lead time are still PLACEHOLDERS until the owner confirms.",
   "name": "Town Donut & Breakfast",
   "location": "watson",
-  "address": "TBD",
-  "phone": "TBD",
+  "address": "35055 3C LA-16, Denham Springs, LA",
+  "phone": "(225) 380-5250",
   "timezone": "America/Chicago",
   "hours": {
-    "monday":    {"open": "05:30", "close": "13:00"},
-    "tuesday":   {"open": "05:30", "close": "13:00"},
-    "wednesday": {"open": "05:30", "close": "13:00"},
-    "thursday":  {"open": "05:30", "close": "13:00"},
-    "friday":    {"open": "05:30", "close": "13:00"},
-    "saturday":  {"open": "06:00", "close": "13:00"},
-    "sunday":    null
+    "monday": {
+      "open": "05:30",
+      "close": "13:00"
+    },
+    "tuesday": {
+      "open": "05:30",
+      "close": "13:00"
+    },
+    "wednesday": {
+      "open": "05:30",
+      "close": "13:00"
+    },
+    "thursday": {
+      "open": "05:30",
+      "close": "13:00"
+    },
+    "friday": {
+      "open": "05:30",
+      "close": "13:00"
+    },
+    "saturday": {
+      "open": "06:00",
+      "close": "13:00"
+    },
+    "sunday": null
   },
-  "closed_dates": ["2026-12-25", "2027-01-01"],
+  "closed_dates": [
+    "2026-12-25",
+    "2027-01-01"
+  ],
   "pickup": {
     "min_lead_minutes": 30,
     "max_days_ahead": 14,
     "slot_minutes": 15
   },
-  "payment": "Payment at pickup. We do not take card details over Messenger."
+  "payment": "Payment at pickup. We do not take card details over Messenger.",
+  "location_display": "Denham Springs / Watson",
+  "price_note": "All prices are before tax. Tax is added at pickup."
 }

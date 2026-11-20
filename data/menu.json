@@ -1,25 +1,569 @@
 {
-  "_comment": "PLACEHOLDER MENU. Items and prices are illustrative only and must be replaced with the owner's real menu before launch.",
+  "_comment": "Town Donut & Breakfast (Denham Springs / Watson) menu, transcribed from the owner's menu board on 2026-11-19. Prices are before tax.",
   "items": [
-    {"id": "glazed_single", "name": "Glazed Donut", "category": "donuts", "unit_label": "each", "price_cents": 125, "max_quantity": 48,
-     "description": "Classic yeast-raised glazed donut."},
-    {"id": "glazed_dozen", "name": "Dozen Glazed Donuts", "category": "donuts", "unit_label": "dozen", "price_cents": 1200, "max_quantity": 20,
-     "description": "Twelve glazed donuts."},
-    {"id": "assorted_dozen", "name": "Dozen Assorted Donuts", "category": "donuts", "unit_label": "dozen", "price_cents": 1400, "max_quantity": 20,
-     "description": "Twelve assorted donuts, chosen by the store."},
-    {"id": "sausage_kolache", "name": "Sausage Kolache", "category": "kolaches", "unit_label": "each", "price_cents": 250, "max_quantity": 60,
-     "description": "Sausage baked in sweet dough.",
-     "modifiers": [
-       {"id": "sausage_kolache_cheese", "name": "Add cheese", "price_delta_cents": 50},
-       {"id": "sausage_kolache_jalapeno", "name": "Add jalapeño", "price_delta_cents": 25}
-     ]},
-    {"id": "breakfast_croissant", "name": "Breakfast Croissant", "category": "breakfast", "unit_label": "each", "price_cents": 550, "max_quantity": 30,
-     "description": "Egg and cheese on a croissant.",
-     "modifiers": [
-       {"id": "breakfast_croissant_bacon", "name": "Add bacon", "price_delta_cents": 150},
-       {"id": "breakfast_croissant_sausage", "name": "Add sausage", "price_delta_cents": 150}
-     ]},
-    {"id": "coffee_medium", "name": "Medium Coffee", "category": "drinks", "unit_label": "each", "price_cents": 225, "max_quantity": 20,
-     "description": "Hot brewed coffee."}
+    {
+      "id": "dozen_glazed_donuts",
+      "name": "Dozen Glazed Donuts",
+      "category": "donuts_by_dozen",
+      "unit_label": "dozen",
+      "price_cents": 1199,
+      "max_quantity": 30,
+      "description": ""
+    },
+    {
+      "id": "dozen_chocolate_donuts",
+      "name": "Dozen Chocolate Donuts",
+      "category": "donuts_by_dozen",
+      "unit_label": "dozen",
+      "price_cents": 1355,
+      "max_quantity": 30,
+      "description": ""
+    },
+    {
+      "id": "dozen_mix_donuts",
+      "name": "Dozen Mix Donuts",
+      "category": "donuts_by_dozen",
+      "unit_label": "dozen",
+      "price_cents": 1355,
+      "max_quantity": 30,
+      "description": ""
+    },
+    {
+      "id": "half_dozen_glazed_donuts",
+      "name": "Half Dozen Glazed Donuts",
+      "category": "donuts_by_half_dozen",
+      "unit_label": "half dozen",
+      "price_cents": 649,
+      "max_quantity": 30,
+      "description": ""
+    },
+    {
+      "id": "half_dozen_chocolate_donuts",
+      "name": "Half Dozen Chocolate Donuts",
+      "category": "donuts_by_half_dozen",
+      "unit_label": "half dozen",
+      "price_cents": 729,
+      "max_quantity": 30,
+      "description": ""
+    },
+    {
+      "id": "half_dozen_mix_donuts",
+      "name": "Half Dozen Mix Donuts",
+      "category": "donuts_by_half_dozen",
+      "unit_label": "half dozen",
+      "price_cents": 729,
+      "max_quantity": 30,
+      "description": ""
+    },
+    {
+      "id": "half_dozen_big_donuts",
+      "name": "Half Dozen Big Donuts",
+      "category": "donuts_by_half_dozen",
+      "unit_label": "half dozen",
+      "price_cents": 1245,
+      "max_quantity": 30,
+      "description": ""
+    },
+    {
+      "id": "glazed_donut",
+      "name": "Glazed Donut",
+      "category": "donuts",
+      "unit_label": "each",
+      "price_cents": 125,
+      "max_quantity": 60,
+      "description": ""
+    },
+    {
+      "id": "icing_sprinkles_donut",
+      "name": "Icing/Sprinkles Donut",
+      "category": "donuts",
+      "unit_label": "each",
+      "price_cents": 135,
+      "max_quantity": 60,
+      "description": ""
+    },
+    {
+      "id": "cake_donut",
+      "name": "Cake Donut",
+      "category": "donuts",
+      "unit_label": "each",
+      "price_cents": 179,
+      "max_quantity": 60,
+      "description": ""
+    },
+    {
+      "id": "filled_donut_long_john",
+      "name": "Filled Donut/Long John",
+      "category": "donuts",
+      "unit_label": "each",
+      "price_cents": 179,
+      "max_quantity": 60,
+      "description": ""
+    },
+    {
+      "id": "cinnamon_roll",
+      "name": "Cinnamon Roll",
+      "category": "donuts",
+      "unit_label": "each",
+      "price_cents": 209,
+      "max_quantity": 60,
+      "description": ""
+    },
+    {
+      "id": "pinecone",
+      "name": "Pinecone",
+      "category": "donuts",
+      "unit_label": "each",
+      "price_cents": 209,
+      "max_quantity": 60,
+      "description": ""
+    },
+    {
+      "id": "twist",
+      "name": "Twist",
+      "category": "donuts",
+      "unit_label": "each",
+      "price_cents": 209,
+      "max_quantity": 60,
+      "description": ""
+    },
+    {
+      "id": "apple_fritter",
+      "name": "Apple Fritter",
+      "category": "donuts",
+      "unit_label": "each",
+      "price_cents": 290,
+      "max_quantity": 60,
+      "description": ""
+    },
+    {
+      "id": "glazed_donut_holes",
+      "name": "Glazed Donut Holes",
+      "category": "donuts",
+      "unit_label": "each",
+      "price_cents": 249,
+      "max_quantity": 60,
+      "description": ""
+    },
+    {
+      "id": "chocolate_donut_holes",
+      "name": "Chocolate Donut Holes",
+      "category": "donuts",
+      "unit_label": "each",
+      "price_cents": 280,
+      "max_quantity": 60,
+      "description": ""
+    },
+    {
+      "id": "boudin_cheese_kolache",
+      "name": "Boudin Cheese Kolache",
+      "category": "kolaches",
+      "unit_label": "each",
+      "price_cents": 365,
+      "max_quantity": 60,
+      "description": ""
+    },
+    {
+      "id": "smoke_sausage_cheese_kolache",
+      "name": "Smoke Sausage & Cheese Kolache",
+      "category": "kolaches",
+      "unit_label": "each",
+      "price_cents": 315,
+      "max_quantity": 60,
+      "description": ""
+    },
+    {
+      "id": "smoke_sausage_cheese_jalapeno_kolache",
+      "name": "Smoke Sausage, Cheese & Jalapeño Kolache",
+      "category": "kolaches",
+      "unit_label": "each",
+      "price_cents": 315,
+      "max_quantity": 60,
+      "description": ""
+    },
+    {
+      "id": "spinach_feta_cheese_danish",
+      "name": "Spinach Feta Cheese Danish",
+      "category": "kolaches",
+      "unit_label": "each",
+      "price_cents": 345,
+      "max_quantity": 60,
+      "description": ""
+    },
+    {
+      "id": "sausage_egg_cheese_croissant",
+      "name": "Sausage, Egg & Cheese Croissant",
+      "category": "croissant_sandwiches",
+      "unit_label": "each",
+      "price_cents": 425,
+      "max_quantity": 30,
+      "description": "",
+      "modifiers": [
+        {
+          "id": "sausage_egg_cheese_croissant_extra_sausage",
+          "name": "Extra sausage",
+          "price_delta_cents": 99
+        },
+        {
+          "id": "sausage_egg_cheese_croissant_extra_bacon",
+          "name": "Extra bacon",
+          "price_delta_cents": 99
+        },
+        {
+          "id": "sausage_egg_cheese_croissant_extra_ham",
+          "name": "Extra ham",
+          "price_delta_cents": 99
+        },
+        {
+          "id": "sausage_egg_cheese_croissant_extra_egg",
+          "name": "Extra egg",
+          "price_delta_cents": 50
+        },
+        {
+          "id": "sausage_egg_cheese_croissant_extra_cheese",
+          "name": "Extra cheese",
+          "price_delta_cents": 50
+        }
+      ]
+    },
+    {
+      "id": "bacon_egg_cheese_croissant",
+      "name": "Bacon, Egg & Cheese Croissant",
+      "category": "croissant_sandwiches",
+      "unit_label": "each",
+      "price_cents": 425,
+      "max_quantity": 30,
+      "description": "",
+      "modifiers": [
+        {
+          "id": "bacon_egg_cheese_croissant_extra_sausage",
+          "name": "Extra sausage",
+          "price_delta_cents": 99
+        },
+        {
+          "id": "bacon_egg_cheese_croissant_extra_bacon",
+          "name": "Extra bacon",
+          "price_delta_cents": 99
+        },
+        {
+          "id": "bacon_egg_cheese_croissant_extra_ham",
+          "name": "Extra ham",
+          "price_delta_cents": 99
+        },
+        {
+          "id": "bacon_egg_cheese_croissant_extra_egg",
+          "name": "Extra egg",
+          "price_delta_cents": 50
+        },
+        {
+          "id": "bacon_egg_cheese_croissant_extra_cheese",
+          "name": "Extra cheese",
+          "price_delta_cents": 50
+        }
+      ]
+    },
+    {
+      "id": "ham_egg_cheese_croissant",
+      "name": "Ham, Egg & Cheese Croissant",
+      "category": "croissant_sandwiches",
+      "unit_label": "each",
+      "price_cents": 425,
+      "max_quantity": 30,
+      "description": "",
+      "modifiers": [
+        {
+          "id": "ham_egg_cheese_croissant_extra_sausage",
+          "name": "Extra sausage",
+          "price_delta_cents": 99
+        },
+        {
+          "id": "ham_egg_cheese_croissant_extra_bacon",
+          "name": "Extra bacon",
+          "price_delta_cents": 99
+        },
+        {
+          "id": "ham_egg_cheese_croissant_extra_ham",
+          "name": "Extra ham",
+          "price_delta_cents": 99
+        },
+        {
+          "id": "ham_egg_cheese_croissant_extra_egg",
+          "name": "Extra egg",
+          "price_delta_cents": 50
+        },
+        {
+          "id": "ham_egg_cheese_croissant_extra_cheese",
+          "name": "Extra cheese",
+          "price_delta_cents": 50
+        }
+      ]
+    },
+    {
+      "id": "sausage_egg_cheese_biscuit_or_burrito",
+      "name": "Sausage, Egg & Cheese Biscuit or Burrito",
+      "category": "biscuit_sandwiches_burritos",
+      "unit_label": "each",
+      "price_cents": 365,
+      "max_quantity": 30,
+      "description": "Served on a biscuit unless the customer asks for a burrito.",
+      "modifiers": [
+        {
+          "id": "sausage_egg_cheese_biscuit_or_burrito_make_it_a_burrito",
+          "name": "Make it a burrito",
+          "price_delta_cents": 0
+        },
+        {
+          "id": "sausage_egg_cheese_biscuit_or_burrito_extra_sausage",
+          "name": "Extra sausage",
+          "price_delta_cents": 99
+        },
+        {
+          "id": "sausage_egg_cheese_biscuit_or_burrito_extra_bacon",
+          "name": "Extra bacon",
+          "price_delta_cents": 99
+        },
+        {
+          "id": "sausage_egg_cheese_biscuit_or_burrito_extra_ham",
+          "name": "Extra ham",
+          "price_delta_cents": 99
+        },
+        {
+          "id": "sausage_egg_cheese_biscuit_or_burrito_extra_egg",
+          "name": "Extra egg",
+          "price_delta_cents": 50
+        },
+        {
+          "id": "sausage_egg_cheese_biscuit_or_burrito_extra_cheese",
+          "name": "Extra cheese",
+          "price_delta_cents": 50
+        }
+      ]
+    },
+    {
+      "id": "bacon_egg_cheese_biscuit_or_burrito",
+      "name": "Bacon, Egg & Cheese Biscuit or Burrito",
+      "category": "biscuit_sandwiches_burritos",
+      "unit_label": "each",
+      "price_cents": 365,
+      "max_quantity": 30,
+      "description": "Served on a biscuit unless the customer asks for a burrito.",
+      "modifiers": [
+        {
+          "id": "bacon_egg_cheese_biscuit_or_burrito_make_it_a_burrito",
+          "name": "Make it a burrito",
+          "price_delta_cents": 0
+        },
+        {
+          "id": "bacon_egg_cheese_biscuit_or_burrito_extra_sausage",
+          "name": "Extra sausage",
+          "price_delta_cents": 99
+        },
+        {
+          "id": "bacon_egg_cheese_biscuit_or_burrito_extra_bacon",
+          "name": "Extra bacon",
+          "price_delta_cents": 99
+        },
+        {
+          "id": "bacon_egg_cheese_biscuit_or_burrito_extra_ham",
+          "name": "Extra ham",
+          "price_delta_cents": 99
+        },
+        {
+          "id": "bacon_egg_cheese_biscuit_or_burrito_extra_egg",
+          "name": "Extra egg",
+          "price_delta_cents": 50
+        },
+        {
+          "id": "bacon_egg_cheese_biscuit_or_burrito_extra_cheese",
+          "name": "Extra cheese",
+          "price_delta_cents": 50
+        }
+      ]
+    },
+    {
+      "id": "ham_egg_cheese_biscuit_or_burrito",
+      "name": "Ham, Egg & Cheese Biscuit or Burrito",
+      "category": "biscuit_sandwiches_burritos",
+      "unit_label": "each",
+      "price_cents": 365,
+      "max_quantity": 30,
+      "description": "Served on a biscuit unless the customer asks for a burrito.",
+      "modifiers": [
+        {
+          "id": "ham_egg_cheese_biscuit_or_burrito_make_it_a_burrito",
+          "name": "Make it a burrito",
+          "price_delta_cents": 0
+        },
+        {
+          "id": "ham_egg_cheese_biscuit_or_burrito_extra_sausage",
+          "name": "Extra sausage",
+          "price_delta_cents": 99
+        },
+        {
+          "id": "ham_egg_cheese_biscuit_or_burrito_extra_bacon",
+          "name": "Extra bacon",
+          "price_delta_cents": 99
+        },
+        {
+          "id": "ham_egg_cheese_biscuit_or_burrito_extra_ham",
+          "name": "Extra ham",
+          "price_delta_cents": 99
+        },
+        {
+          "id": "ham_egg_cheese_biscuit_or_burrito_extra_egg",
+          "name": "Extra egg",
+          "price_delta_cents": 50
+        },
+        {
+          "id": "ham_egg_cheese_biscuit_or_burrito_extra_cheese",
+          "name": "Extra cheese",
+          "price_delta_cents": 50
+        }
+      ]
+    },
+    {
+      "id": "plain_biscuit",
+      "name": "Plain Biscuit",
+      "category": "biscuit_sandwiches_burritos",
+      "unit_label": "each",
+      "price_cents": 179,
+      "max_quantity": 30,
+      "description": "",
+      "modifiers": [
+        {
+          "id": "plain_biscuit_extra_sausage",
+          "name": "Extra sausage",
+          "price_delta_cents": 99
+        },
+        {
+          "id": "plain_biscuit_extra_bacon",
+          "name": "Extra bacon",
+          "price_delta_cents": 99
+        },
+        {
+          "id": "plain_biscuit_extra_ham",
+          "name": "Extra ham",
+          "price_delta_cents": 99
+        },
+        {
+          "id": "plain_biscuit_extra_egg",
+          "name": "Extra egg",
+          "price_delta_cents": 50
+        },
+        {
+          "id": "plain_biscuit_extra_cheese",
+          "name": "Extra cheese",
+          "price_delta_cents": 50
+        }
+      ]
+    },
+    {
+      "id": "large_milk",
+      "name": "Large Milk",
+      "category": "drinks",
+      "unit_label": "each",
+      "price_cents": 415,
+      "max_quantity": 30,
+      "description": ""
+    },
+    {
+      "id": "medium_milk",
+      "name": "Medium Milk",
+      "category": "drinks",
+      "unit_label": "each",
+      "price_cents": 249,
+      "max_quantity": 30,
+      "description": ""
+    },
+    {
+      "id": "small_milk",
+      "name": "Small Milk",
+      "category": "drinks",
+      "unit_label": "each",
+      "price_cents": 165,
+      "max_quantity": 30,
+      "description": ""
+    },
+    {
+      "id": "soft_drink",
+      "name": "Soft Drink",
+      "category": "drinks",
+      "unit_label": "each",
+      "price_cents": 259,
+      "max_quantity": 30,
+      "description": ""
+    },
+    {
+      "id": "energy_drink",
+      "name": "Energy Drink",
+      "category": "drinks",
+      "unit_label": "each",
+      "price_cents": 335,
+      "max_quantity": 30,
+      "description": ""
+    },
+    {
+      "id": "juice_minute_maid",
+      "name": "Juice (Minute Maid)",
+      "category": "drinks",
+      "unit_label": "each",
+      "price_cents": 259,
+      "max_quantity": 30,
+      "description": ""
+    },
+    {
+      "id": "coffee",
+      "name": "Coffee",
+      "category": "drinks",
+      "unit_label": "each",
+      "price_cents": 259,
+      "max_quantity": 30,
+      "description": ""
+    },
+    {
+      "id": "cappuccino",
+      "name": "Cappuccino",
+      "category": "drinks",
+      "unit_label": "each",
+      "price_cents": 335,
+      "max_quantity": 30,
+      "description": ""
+    },
+    {
+      "id": "water",
+      "name": "Water",
+      "category": "drinks",
+      "unit_label": "each",
+      "price_cents": 165,
+      "max_quantity": 30,
+      "description": ""
+    },
+    {
+      "id": "tummy_yummy",
+      "name": "Tummy Yummy",
+      "category": "drinks",
+      "unit_label": "each",
+      "price_cents": 175,
+      "max_quantity": 30,
+      "description": ""
+    },
+    {
+      "id": "starbucks",
+      "name": "Starbucks",
+      "category": "drinks",
+      "unit_label": "each",
+      "price_cents": 315,
+      "max_quantity": 30,
+      "description": ""
+    },
+    {
+      "id": "prime",
+      "name": "Prime",
+      "category": "drinks",
+      "unit_label": "each",
+      "price_cents": 280,
+      "max_quantity": 30,
+      "description": ""
+    }
   ]
 }

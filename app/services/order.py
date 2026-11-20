@@ -36,6 +36,10 @@ class SummaryChanged(OrderError):
     """Price, availability or pickup validity changed since the summary was shown."""
 
 
+# Owner's instruction: don't calculate tax, but always remind customers prices are before tax.
+TAX_REMINDER = "Reminder: prices shown are before tax. Tax will be added at pickup."
+
+
 @dataclass(frozen=True)
 class OrderSummary:
     token: str
@@ -83,7 +87,10 @@ def render_summary(view: cart_svc.CartView, biz: BusinessInfo) -> str:
     ]
     if view.notes:
         lines.append(f"Notes: {view.notes}")
-    lines += ["Payment: At pickup", "Would you like to submit this order?"]
+    lines.append("Payment: At pickup")
+    if not t.tax_included:
+        lines.append(TAX_REMINDER)
+    lines.append("Would you like to submit this order?")
     return "\n".join(lines)
 
 
@@ -204,7 +211,7 @@ def format_owner_sms(conn: sqlite3.Connection, order: sqlite3.Row, biz: Business
     if order["tax_cents"]:
         lines.append(f"Total: {money(order['total_cents'])} (incl. tax {money(order['tax_cents'])})")
     else:
-        lines.append(f"Subtotal: {money(order['subtotal_cents'])}")
+        lines.append(f"Subtotal: {money(order['subtotal_cents'])} (before tax)")
     lines += ["Payment: At pickup", "Status: Awaiting acceptance", f"Notes: {order['notes'] or 'None'}"]
     if order["needs_review"]:
         lines.append("LARGE ORDER: please review carefully.")
