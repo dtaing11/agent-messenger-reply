@@ -107,7 +107,7 @@ class MessengerClient:
                 "text": last,
                 "quick_replies": [
                     {"content_type": "text", "title": "Confirm Order", "payload": POSTBACK_CONFIRM + token},
-                    {"content_type": "text", "title": "Modify", "payload": POSTBACK_MODIFY},
+                    {"content_type": "text", "title": "Modify", "payload": f"{POSTBACK_MODIFY}:{token}"},
                 ],
             },
         })

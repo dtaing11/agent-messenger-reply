@@ -33,7 +33,7 @@ from app.integrations import checks
 from app.agent.state_machine import OrderStatus
 from app.integrations import twilio
 from app.services import conversation as conv_svc
-from app.services import customers, menu_admin, owner_accounts, owner_commands
+from app.services import customers, menu_admin, notify, owner_accounts, owner_commands
 from app.services.business import load_business
 from app.services.phone import display as phone_display
 from app.services.pricing import money
@@ -608,7 +608,7 @@ def create_admin_app() -> FastAPI:
     @app.get("/admin/owners")
     def owners_page(request: Request, conn=Depends(get_db), user=Depends(current_user), s=Depends(runtime_settings)):
         now = utcnow()
-        accounts = [{**dict(a), "open": owner_accounts.window_open(a, now),
+        accounts = [{**dict(a), "open": owner_accounts.window_open(a, now), "pending": a["approved_at"] is None,
                      "closes": to_db(owner_accounts.window_closes_at(a)) if a["last_message_at"] else None}
                     for a in owner_accounts.all_accounts(conn)]
         recent = conn.execute("SELECT * FROM notifications ORDER BY id DESC LIMIT 25").fetchall()
@@ -617,7 +617,7 @@ def create_admin_app() -> FastAPI:
                ORDER BY id DESC""", (to_db(now - timedelta(hours=24)),)).fetchall()
         return page(request, "owners.html", user, s=s, accounts=accounts, recent=recent, sms_failures=sms_failures,
                     labels={a["psid"]: a["label"] for a in accounts},
-                    reachable=s.owner_alert_channel == "sms" or any(a["open"] and a["active"] for a in accounts),
+                    reachable=s.owner_alert_channel == "sms" or any(a["open"] and a["active"] and not a["pending"] for a in accounts),
                     twilio_ready=twilio.configured(s), saved=request.query_params.get("saved"))
 
     def _back_to_owners(request: Request, saved: str):
@@ -645,7 +645,26 @@ def create_admin_app() -> FastAPI:
             return result(request, False, str(exc))
         auth.audit(conn, user.username, "owner.link_code", label.strip()[:40], "ok")  # never the code itself
         return result(request, True, f"From {label.strip()}'s own Facebook account, send the Page this message within "
-                                     f"15 minutes:  LINK {code}")
+                                     f"15 minutes:  LINK {code}   Then approve the account below (reload this page).")
+
+    @app.post("/admin/owners/{account_id}/approve")
+    async def owners_approve(account_id: int, request: Request, conn=Depends(get_db), user=Depends(admin_user),
+                             s=Depends(runtime_settings)):
+        now = utcnow()
+        acc = owner_accounts.approve(conn, account_id, now)
+        if acc is None:
+            return result(request, False, "There's nothing waiting for approval there.")
+        conn.execute(
+            """INSERT OR IGNORE INTO notifications (type, recipient, body, idempotency_key, channel)
+               VALUES ('owner_welcome', ?, ?, ?, 'messenger')""",
+            (acc["psid"], owner_accounts.WELCOME.format(label=acc["label"]), f"owner_welcome:{acc['id']}:{acc['approved_at']}"),
+        )
+        notify.alert_owners(conn, s, "owner_linked",
+                            f"FYI: {acc['label']} (Messenger …{acc['psid'][-4:]}) was approved by {user.username} and can now "
+                            "get order alerts and reply to orders.",
+                            f"owner_linked:{acc['id']}:{acc['approved_at']}", exclude=acc["psid"], now=now, every_channel=True)
+        auth.audit(conn, user.username, "owner.approve", str(account_id), "ok")
+        return _back_to_owners(request, f"Approved. {acc['label']} will get a welcome message on Messenger.")
 
     @app.post("/admin/owners/{account_id}/remove")
     async def owners_remove(account_id: int, request: Request, conn=Depends(get_db), user=Depends(admin_user)):
@@ -655,9 +674,10 @@ def create_admin_app() -> FastAPI:
 
     @app.post("/admin/owners/{account_id}/test")
     async def owners_test(account_id: int, request: Request, conn=Depends(get_db), user=Depends(admin_user)):
-        acc = conn.execute("SELECT * FROM owner_accounts WHERE id = ? AND active = 1", (account_id,)).fetchone()
+        acc = conn.execute("SELECT * FROM owner_accounts WHERE id = ? AND active = 1 AND approved_at IS NOT NULL",
+                           (account_id,)).fetchone()
         if acc is None:
-            return result(request, False, "That owner isn't linked.")
+            return result(request, False, "That owner isn't linked and approved.")
         if not owner_accounts.window_open(acc, utcnow()):
             return result(request, False, f"{acc['label']} hasn't messaged the Page in 24 hours, so Facebook won't let the Page "
                                           "message them. Ask them to send the Page any message, then try again.")

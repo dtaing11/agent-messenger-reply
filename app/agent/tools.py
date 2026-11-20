@@ -3,6 +3,8 @@ always the one from the event (never an LLM argument). The LLM cannot submit an 
 that only happens when the customer taps Confirm on the summary (handled in the worker)."""
 
 import json
+import logging
+import re
 import sqlite3
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -24,6 +26,8 @@ from app.services import order as order_svc
 from app.services.business import BusinessInfo, PickupValidation, validate_pickup_time
 from app.services.pricing import money
 from app.timeutil import from_db, local
+
+log = logging.getLogger(__name__)
 
 TOOLS: list[dict] = [
     {"type": "function", "function": {
@@ -100,6 +104,20 @@ TOOLS: list[dict] = [
 ]
 
 
+# The owners' rule: the bot never gives discounts, so nothing it writes for the team may suggest one.
+DISCOUNT_WORDS = re.compile(
+    r"\b(discount\w*|coupons?|promo(?:tion)?s?|price ?match\w*|for free|on the house)\b"
+    r"|\d+\s*%|%\s*off\b|\$\s*\d+(?:\.\d+)?\s*off\b", re.I)
+
+# How each order status reads to the customer. A missed pickup is an owner-only record:
+# the assistant only ever sees "closed", the same as a picked-up order.
+CUSTOMER_STATUS = {
+    "PENDING_ACCEPTANCE": "waiting for the team to accept", "ACCEPTED": "accepted", "PREPARING": "being prepared",
+    "READY": "ready for pickup", "REJECTED": "not accepted", "CANCELLED": "cancelled",
+    "EXPIRED": "not accepted in time", "COMPLETED": "closed", "NO_SHOW": "closed",
+}
+
+
 @dataclass
 class ToolContext:
     conn: sqlite3.Connection
@@ -111,6 +129,21 @@ class ToolContext:
     handoff_reason: str | None = None  # set by request_human_support
     quick_replies: tuple[str, ...] = ()  # set by offer_choices
     log: list[str] = field(default_factory=list)
+
+
+def _whole(value, what: str = "quantity", low: int = 0, high: int = 10**9) -> int:
+    """A whole number from tool arguments: 1.9 or "lots" is refused instead of silently becoming 1."""
+    if isinstance(value, bool):
+        raise ValueError(f"The {what} must be a whole number.")
+    if isinstance(value, float):
+        if not value.is_integer():
+            raise ValueError(f"The {what} must be a whole number. Ask the customer how many.")
+        value = int(value)
+    if isinstance(value, str) and value.strip().lstrip("-").isdigit():
+        value = int(value.strip())
+    if not isinstance(value, int) or not (low <= value <= high):
+        raise ValueError(f"The {what} must be a whole number from {low} to {high}.")
+    return value
 
 
 def _parse_local(ctx: ToolContext, value: str) -> datetime:
@@ -214,6 +247,9 @@ async def execute(ctx: ToolContext, name: str, raw_args: str | dict) -> dict:
         if isinstance(exc, cart_svc.DetailsNeeded):
             return {"error": "details_needed", "ask_customer": exc.questions}
         return {"error": str(exc)[:300]}
+    except Exception as exc:  # noqa: BLE001 - a tool bug must never crash the whole reply (a retry would redo tools)
+        log.exception("tool %s failed", name)
+        return {"error": f"That didn't work ({type(exc).__name__}). Try something else or ask the customer."}
 
 
 def _dispatch(ctx: ToolContext, name: str, a: dict) -> dict:
@@ -256,18 +292,20 @@ def _dispatch(ctx: ToolContext, name: str, a: dict) -> dict:
     if name == "get_cart":
         return _cart_json(ctx)
     if name == "add_to_cart":
-        view = cart_svc.add_item(conn, cid, str(a["item_id"]), int(a["quantity"]), a.get("modifier_ids") or None, a.get("details") or None)
+        view = cart_svc.add_item(conn, cid, str(a["item_id"]), _whole(a["quantity"], low=1, high=100), a.get("modifier_ids") or None, a.get("details") or None)
         return {"ok": True, "cart": _cart_json(ctx, view)}
     if name == "update_cart_item":
-        view = cart_svc.update_item(conn, cid, int(a["line_id"]), int(a["quantity"]), a.get("modifier_ids"), a.get("details"))
+        view = cart_svc.update_item(conn, cid, _whole(a["line_id"], "line_id"), _whole(a["quantity"], high=100), a.get("modifier_ids"), a.get("details"))
         return {"ok": True, "cart": _cart_json(ctx, view)}
     if name == "remove_from_cart":
-        return {"ok": True, "cart": _cart_json(ctx, cart_svc.remove_item(conn, cid, int(a["line_id"])))}
+        return {"ok": True, "cart": _cart_json(ctx, cart_svc.remove_item(conn, cid, _whole(a["line_id"], "line_id")))}
     if name == "check_pickup_time":
         pv = _validate_for_cart(ctx, _parse_local(ctx, str(a["pickup_time"])))
         return {"ok": pv.ok, "pickup_time": _fmt_local(pv.pickup_local, ctx.biz.timezone), "reason": pv.reason,
                 "suggestions": _suggestions(ctx, pv) or None}
     if name == "set_pickup_details":
+        if a.get("notes") and DISCOUNT_WORDS.search(str(a["notes"])):
+            return {"ok": False, "reason": "Notes can't mention discounts or price changes. Sprinkle never gives discounts."}
         when = None
         if a.get("pickup_time"):
             when = _parse_local(ctx, str(a["pickup_time"]))
@@ -285,11 +323,11 @@ def _dispatch(ctx: ToolContext, name: str, a: dict) -> dict:
         rows = conn.execute(
             "SELECT id, status, pickup_time, subtotal_cents FROM orders WHERE customer_id = ? ORDER BY id DESC LIMIT 5", (cid,)
         ).fetchall()
-        return {"orders": [{"order_id": r["id"], "status": r["status"].replace("_", " ").lower(),
+        return {"orders": [{"order_id": r["id"], "status": CUSTOMER_STATUS.get(r["status"], r["status"].replace("_", " ").lower()),
                             "pickup_time": _fmt_local(from_db(r["pickup_time"]), ctx.biz.timezone),
                             "subtotal_before_tax": money(r["subtotal_cents"])} for r in rows]}
     if name == "cancel_my_order":
-        o = order_svc.cancel_by_customer(conn, cid, int(a["order_id"]), ctx.settings)
+        o = order_svc.cancel_by_customer(conn, cid, _whole(a["order_id"], "order_id"), ctx.settings)
         notify.alert_owners(ctx.conn, ctx.settings, "order_cancelled",
                             f"Order #{o['id']} ({o['customer_name']}) was CANCELLED by the customer on Messenger.",
                             f"order:{o['id']}:cancelled", order_id=o["id"])

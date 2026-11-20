@@ -125,6 +125,11 @@ async def run_agent(
         except LLMError as exc:
             log.warning("LLM failed: %s", exc)
             return AgentResult(error=str(exc), tools_used=tuple(ctx.log))
+        except Exception as exc:  # noqa: BLE001 - never crash the reply part way (the worker undoes the cart)
+            log.exception("LLM call failed unexpectedly")
+            return AgentResult(error=f"{type(exc).__name__}: {exc}"[:200], tools_used=tuple(ctx.log))
+        if not isinstance(msg, dict):
+            return AgentResult(error="malformed AI response", tools_used=tuple(ctx.log))
         calls = msg.get("tool_calls") or []
         content = _strip_notes(msg.get("content") or "")
         if not calls and not content and not nudged and ctx.summary is None and not ctx.handoff_reason:

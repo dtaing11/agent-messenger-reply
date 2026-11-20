@@ -1,8 +1,10 @@
 """Owner alerts on Facebook Messenger.
 
-An owner links their own Facebook account by sending the Page "LINK 123456", a one-time code
-made in the portal. After that, their messages to the Page are owner commands (never shown to
-the AI), and order alerts can go to them on Messenger.
+An owner links their own Facebook account by sending the Page "LINK ABCD-2345", a one-time code
+made in the portal, and someone approves the new account in the portal. After that, their
+messages to the Page are owner commands (never shown to the AI), and order alerts can go to them
+on Messenger. Wrong codes are limited per account and overall; too many and every open code is
+cancelled.
 
 Meta only lets a Page message a person within 24 hours of that person's last message, and the
 old message tags that allowed updates later were retired in 2026 (none ever covered staff
@@ -23,10 +25,17 @@ from app.timeutil import from_db, local, to_db
 
 WINDOW = timedelta(hours=24)
 CODE_TTL = timedelta(minutes=15)
-LINK_RE = re.compile(r"^\s*link\s*#?\s*(\d{6})\s*[.!]?\s*$", re.IGNORECASE)
+CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no 0/O or 1/I to mix up; 32**8 ≈ 1.1e12 codes
+LINK_RE = re.compile(r"^\s*link\s*[:#]?\s*([a-z0-9]{4})[\s-]?([a-z0-9]{4})\s*[.!]?\s*$", re.IGNORECASE)
+FAILS_PER_ACCOUNT, FAILS_OVERALL, LOCKOUT = 5, 20, timedelta(hours=1)
 
 KEEPALIVE_TEXT = ("Daily check-in: tap 👍 so I can keep sending you order alerts here. "
                   "Facebook only lets the Page message you within 24 hours of your last message.")
+WELCOME = ("You're linked as {label}. New orders, pickup checks and 3 AM reminders will come here. "
+           "Tap the buttons on an alert, or reply with an exact command like YES 12, NO 12, READY 12, PICKED 12 or "
+           "NOSHOW 12 (always with the order number). Reply HELP for all commands.\n\n"
+           "Facebook only lets the Page message you within 24 hours of your last message, so I'll send a daily "
+           "check-in. Tap 👍 on it to keep alerts coming.")
 KEEPALIVE_BUTTONS = [["👍 Keep alerts on", "KEEPALIVE"], ["Open orders", "ORDERS"]]
 # The check-in goes out during the day (store-local) once the window has CHECKIN_LEFT left, or in
 # the evening when the window would otherwise close overnight or early the next morning.
@@ -35,7 +44,9 @@ CHECKIN_LEFT = timedelta(hours=3)
 
 
 class LinkError(ValueError):
-    pass
+    def __init__(self, message: str, alarm: bool = False):
+        super().__init__(message)
+        self.alarm = alarm  # too many wrong codes overall: every open code was cancelled
 
 
 def _hash(code: str) -> str:
@@ -46,41 +57,74 @@ def create_link_code(conn: sqlite3.Connection, label: str, created_by: str, now:
     label = " ".join((label or "").split())[:40]
     if not label:
         raise LinkError("Give the owner a name, like \"Dina\".")
-    code = f"{secrets.randbelow(1_000_000):06d}"
+    raw = "".join(secrets.choice(CODE_ALPHABET) for _ in range(8))
     conn.execute("INSERT INTO owner_link_codes (code_hash, label, created_by, expires_at) VALUES (?, ?, ?, ?)",
-                 (_hash(code), label, created_by, to_db(now + CODE_TTL)))
-    return code
+                 (_hash(raw), label, created_by, to_db(now + CODE_TTL)))
+    return f"{raw[:4]}-{raw[4:]}"
 
 
 def link_code_in(text: str | None) -> str | None:
     m = LINK_RE.match(text or "")
-    return m.group(1) if m else None
+    return (m.group(1) + m.group(2)).upper() if m else None
+
+
+def _failures(conn: sqlite3.Connection, now: datetime, psid: str | None = None) -> int:
+    sql = "SELECT COUNT(*) FROM owner_link_attempts WHERE ok = 0 AND at >= ?"
+    args: list = [to_db(now - LOCKOUT)]
+    if psid is not None:
+        sql += " AND psid = ?"
+        args.append(psid)
+    return conn.execute(sql, args).fetchone()[0]
 
 
 def link(conn: sqlite3.Connection, page_id: str, psid: str, code: str, now: datetime) -> sqlite3.Row:
-    """Use a code: this Messenger account becomes an owner account. Raises LinkError."""
+    """Use a code: this Messenger account becomes an owner account waiting for approval in the
+    portal. Raises LinkError (wrong code, too many tries)."""
+    if _failures(conn, now, psid) >= FAILS_PER_ACCOUNT:
+        raise LinkError("Too many wrong codes from this account. Please wait an hour, then use a new code.")
+    if _failures(conn, now) >= FAILS_OVERALL:
+        raise LinkError("Linking is paused for an hour because of too many wrong codes. Make a new code in the portal later.")
+    code = code.replace("-", "").upper()
     row = conn.execute("SELECT * FROM owner_link_codes WHERE code_hash = ?", (_hash(code),)).fetchone()
     if row is None or row["used_at"] or from_db(row["expires_at"]) <= now:
+        conn.execute("INSERT INTO owner_link_attempts (psid, ok, at) VALUES (?, 0, ?)", (psid, to_db(now)))
+        if _failures(conn, now) == FAILS_OVERALL:
+            conn.execute("UPDATE owner_link_codes SET used_at = ? WHERE used_at IS NULL", (to_db(now),))
+            raise LinkError("That code isn't valid. Linking is now paused for an hour.", alarm=True)
         raise LinkError("That code isn't valid anymore. Make a new one in the portal (Owner alerts).")
     if not conn.execute("UPDATE owner_link_codes SET used_at = ? WHERE code_hash = ? AND used_at IS NULL",
                         (to_db(now), row["code_hash"])).rowcount:
         raise LinkError("That code was already used.")
+    conn.execute("INSERT INTO owner_link_attempts (psid, ok, at) VALUES (?, 1, ?)", (psid, to_db(now)))
     conn.execute(
-        """INSERT INTO owner_accounts (page_id, psid, label, last_message_at) VALUES (?, ?, ?, ?)
-           ON CONFLICT(page_id, psid) DO UPDATE SET label = excluded.label, active = 1,
+        """INSERT INTO owner_accounts (page_id, psid, label, last_message_at, approved_at) VALUES (?, ?, ?, ?, NULL)
+           ON CONFLICT(page_id, psid) DO UPDATE SET label = excluded.label, active = 1, approved_at = NULL,
              last_message_at = excluded.last_message_at, keepalive_sent_at = NULL""",
         (page_id, psid, row["label"], to_db(now)),
     )
-    return find(conn, page_id, psid)
+    return pending_for(conn, page_id, psid)
+
+
+def pending_for(conn: sqlite3.Connection, page_id: str, psid: str) -> sqlite3.Row | None:
+    return conn.execute("SELECT * FROM owner_accounts WHERE page_id = ? AND psid = ? AND active = 1 AND approved_at IS NULL",
+                        (page_id, psid)).fetchone()
+
+
+def approve(conn: sqlite3.Connection, account_id: int, now: datetime) -> sqlite3.Row | None:
+    if not conn.execute("UPDATE owner_accounts SET approved_at = ? WHERE id = ? AND active = 1 AND approved_at IS NULL",
+                        (to_db(now), account_id)).rowcount:
+        return None
+    return conn.execute("SELECT * FROM owner_accounts WHERE id = ?", (account_id,)).fetchone()
 
 
 def find(conn: sqlite3.Connection, page_id: str, psid: str) -> sqlite3.Row | None:
-    return conn.execute("SELECT * FROM owner_accounts WHERE page_id = ? AND psid = ? AND active = 1",
+    """An approved, active owner account."""
+    return conn.execute("SELECT * FROM owner_accounts WHERE page_id = ? AND psid = ? AND active = 1 AND approved_at IS NOT NULL",
                         (page_id, psid)).fetchone()
 
 
 def active(conn: sqlite3.Connection) -> list[sqlite3.Row]:
-    return conn.execute("SELECT * FROM owner_accounts WHERE active = 1 ORDER BY id").fetchall()
+    return conn.execute("SELECT * FROM owner_accounts WHERE active = 1 AND approved_at IS NOT NULL ORDER BY id").fetchall()
 
 
 def all_accounts(conn: sqlite3.Connection) -> list[sqlite3.Row]:
@@ -101,7 +145,7 @@ def window_open(account: sqlite3.Row, now: datetime) -> bool:
 
 
 def window_open_for(conn: sqlite3.Connection, psid: str, now: datetime) -> bool:
-    row = conn.execute("SELECT * FROM owner_accounts WHERE psid = ? AND active = 1", (psid,)).fetchone()
+    row = conn.execute("SELECT * FROM owner_accounts WHERE psid = ? AND active = 1", (psid,)).fetchone()  # pending too
     return bool(row and window_open(row, now))
 
 

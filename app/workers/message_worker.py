@@ -30,7 +30,7 @@ from app.integrations.messenger import (
     MessengerClient,
 )
 from app.services import conversation as conv_svc
-from app.services import notify, owner_accounts, owner_commands, sessions
+from app.services import notify, owner_accounts, owner_commands, sessions, turns
 from app.services import order as order_svc
 from app.services.business import BusinessInfo, load_business
 from app.settings.runtime import effective_settings, set_marker
@@ -126,13 +126,17 @@ class MessageProcessor:
         if event.event_type == "postback":
             payload = raw["postback"].get("payload", "")
             conv_svc.record_message(conn, cid, "customer", f"[button] {raw['postback'].get('title', payload)}", event.external_event_id)
-            return "done" if paused else await self._handle_payload(ctx, payload)
+            if paused or not conv_svc.get_conversation(conn, cid)["bot_enabled"]:
+                return "done"  # staff have this chat: a tap is recorded, never acted on
+            return await self._handle_payload(ctx, payload)
 
         msg = raw["message"]
         qr_payload = (msg.get("quick_reply") or {}).get("payload", "")
         if msg.get("quick_reply") and not qr_payload.startswith(PICK):
             conv_svc.record_message(conn, cid, "customer", msg.get("text") or "[quick reply]", msg["mid"])
-            return "done" if paused else await self._handle_payload(ctx, qr_payload)
+            if paused or not conv_svc.get_conversation(conn, cid)["bot_enabled"]:
+                return "done"  # staff have this chat: Confirm/Modify taps don't submit or change anything
+            return await self._handle_payload(ctx, qr_payload)
 
         # A tapped option (offer_choices) counts as if the customer typed the full option.
         text = (qr_payload.removeprefix(PICK) if qr_payload else msg.get("text") or "").strip()
@@ -150,7 +154,11 @@ class MessageProcessor:
         if await self._resend_saved_reply(ctx, msg["mid"]):
             return "done"  # a retry after a failed send: don't run the AI (and change the cart) twice
         sessions.maybe_start_session(conn, cid, msg["mid"], settings.session_idle_hours)
+        if turns.begin(conn, cid, msg["mid"]):
+            log.warning("retrying message for customer %s from its saved cart", cid)
         result = await self.agent(conn, cid, settings, self.biz, now)
+        if isinstance(result, AgentResult) and result.error:
+            turns.rollback(conn, cid, msg["mid"])  # all or nothing: the AI failed part way
         await self._deliver(ctx, msg["mid"], result)
         return "done"
 
@@ -168,24 +176,35 @@ class MessageProcessor:
         payload = (msg.get("quick_reply") or {}).get("payload", "") or (raw.get("postback") or {}).get("payload", "")
         text = (msg.get("text") or (raw.get("postback") or {}).get("title") or "").strip()
         code = owner_accounts.link_code_in(text)
-        if owner is None and not code:
+        pending = owner_accounts.pending_for(conn, p["page_id"], psid) if owner is None else None
+        if owner is None and not code and not pending:
             return None
         responder = self._responder_factory(settings)
+        if owner is None and not code:
+            conn.execute("UPDATE owner_accounts SET last_message_at = ? WHERE id = ?", (to_db(now), pending["id"]))
+            await responder.send_text(psid, "This account is waiting for approval in the portal (Owner alerts). "
+                                            "You'll get a message here once it's approved.")
+            return "done"
         if owner is None:
             try:
-                owner = owner_accounts.link(conn, p["page_id"], psid, code, now)
+                acc = owner_accounts.link(conn, p["page_id"], psid, code, now)
             except owner_accounts.LinkError as exc:
+                if exc.alarm:
+                    notify.alert_owners(conn, settings, "owner_link_alarm",
+                                        "Town Donut bot: someone sent the Page many wrong owner link codes. Every open "
+                                        "link code was cancelled and linking is paused for an hour.",
+                                        f"owner_link_alarm:{to_db(now)[:13]}", now=now, every_channel=True)
                 await responder.send_text(psid, str(exc))
                 return "done"
-            notify.alert_owners(conn, settings, "owner_linked",
-                                f"FYI: {owner['label']} linked a Facebook account for Town Donut order alerts.",
-                                f"owner_linked:{owner['id']}:{owner['linked_at']}", exclude=psid, now=now,
-                                every_channel=True)  # a new account that can accept orders: tell everyone
+            # Not active until someone approves it in the portal; tell everyone it's waiting.
+            notify.alert_owners(conn, settings, "owner_link_request",
+                                f"Town Donut bot: the owner link code for {acc['label']} was used (Messenger account "
+                                f"…{psid[-4:]}). Approve it in the portal (Owner alerts) if that's right.",
+                                f"owner_link_request:{acc['id']}:{acc['linked_at']}", exclude=psid, now=now,
+                                every_channel=True)
             await responder.send_text(psid, (
-                f"You're linked as {owner['label']}. New orders, pickup checks and 3 AM reminders will come here. "
-                "Tap the buttons on an alert, or reply YES 12, NO 12, READY 12, PICKED 12 or NOSHOW 12. Reply HELP for all commands.\n\n"
-                "Facebook only lets the Page message you within 24 hours of your last message, so I'll send a daily "
-                "check-in. Tap 👍 on it to keep alerts coming."))
+                f"Thanks, {acc['label']}! Before alerts start, this account needs approval in the portal "
+                "(Owner alerts → Approve). You'll get a message here once it's approved."))
             return "done"
         held = owner_accounts.touch(conn, owner["id"], now)
         if payload.startswith(OWNER_CMD):
@@ -219,6 +238,7 @@ class MessageProcessor:
                                     with_buttons_note(result.text, result.quick_replies), f"reply:{mid}")
         if result.summary:
             conv_svc.record_message(ctx.conn, ctx.customer_id, "assistant", result.summary.text, f"reply:{mid}:summary")
+        turns.finish(ctx.conn, mid, ctx.now)  # the reply is saved: a retry now resends it instead
         if result.text and result.quick_replies:
             await ctx.responder.send_choices(ctx.psid, result.text, result.quick_replies)
         elif result.text:
@@ -286,7 +306,12 @@ class MessageProcessor:
                 return "done"
             await self._reply(ctx, order_svc.confirmation_text(order, self.biz))
             return "done"
-        if payload == POSTBACK_MODIFY:
+        if payload == POSTBACK_MODIFY or payload.startswith(POSTBACK_MODIFY + ":"):
+            sent = order_svc.submitted_order_for_modify(conn, cid, payload.removeprefix(POSTBACK_MODIFY).lstrip(":"))
+            if sent is not None:
+                # The summary was already confirmed: the cart is gone, so changes go to the team.
+                await self._reply(ctx, order_svc.modify_after_submit_text(sent))
+                return "done"
             conv = conv_svc.get_conversation(conn, cid)
             if conv["state"] != ConversationState.BUILDING_CART:
                 conv_svc.set_state(conn, cid, ConversationState.BUILDING_CART)

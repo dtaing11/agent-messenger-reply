@@ -102,9 +102,16 @@ def test_yes_accepts_and_notifies_customer(conn, biz, settings):
     assert [r["recipient"] for r in fyi] == [OWNER2] and "1" in fyi[0]["body"]
 
 
-def test_number_optional_when_one_order_fits(conn, customer_id, biz, settings):
+def test_order_number_always_required_and_commands_exact(conn, customer_id, biz, settings):
     o = place_order(conn, customer_id, biz, settings)
-    assert "accepted" in owner_commands.handle(conn, settings, biz, OWNER1, "YES", NOW)
+    reply = owner_commands.handle(conn, settings, biz, OWNER1, "YES", NOW)
+    assert f"Which order? Reply YES and the order number, e.g. YES {o['id']}" in reply and "Jessica" in reply
+    assert conn.execute("SELECT status FROM orders").fetchone()[0] == "PENDING_ACCEPTANCE"
+    for chat in ("ok", f"Ok see you at {o['id']}", "No problem, thanks!", f"yes {o['id']} and {o['id'] + 1}",
+                 f"ready in {o['id']} min", f"no {o['id']} worries"):
+        assert "nothing was changed" in owner_commands.handle(conn, settings, biz, OWNER1, chat, NOW), chat
+    assert conn.execute("SELECT status FROM orders").fetchone()[0] == "PENDING_ACCEPTANCE"
+    assert "accepted" in owner_commands.handle(conn, settings, biz, OWNER1, f" yes #{o['id']}. ", NOW)
     assert "can't be accepted" in owner_commands.handle(conn, settings, biz, OWNER1, f"YES {o['id']}", NOW)
     assert "No order can be declined" in owner_commands.handle(conn, settings, biz, OWNER1, "NO", NOW)
 

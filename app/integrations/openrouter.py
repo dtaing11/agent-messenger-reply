@@ -58,7 +58,12 @@ async def chat(settings: Settings, messages: list[dict], tools: list[dict] | Non
         except ValueError:
             msg = ""
         raise LLMError(f"{model}: HTTP {resp.status_code} {msg}"[:300])
-    data = resp.json()
+    try:
+        data = resp.json()
+    except ValueError as exc:  # e.g. a proxy's HTML error page with status 200
+        raise LLMError(f"{model}: the response wasn't JSON") from exc
+    if not isinstance(data, dict):
+        raise LLMError(f"{model}: malformed response")
     if "error" in data:
         raise LLMError(f"{model}: {data['error'].get('message', 'error')}"[:300])
     try:
@@ -74,10 +79,10 @@ async def chat_with_fallback(settings: Settings, messages: list[dict], tools: li
                              http: httpx.AsyncClient | None = None) -> dict:
     try:
         return await chat(settings, messages, tools, settings.ai_model, http)
-    except (LLMError, httpx.HTTPError) as first:
+    except (LLMError, httpx.HTTPError, ValueError) as first:
         if not settings.ai_fallback_model:
             raise LLMError(str(first)) from first
         try:
             return await chat(settings, messages, tools, settings.ai_fallback_model, http)
-        except (LLMError, httpx.HTTPError) as second:
+        except (LLMError, httpx.HTTPError, ValueError) as second:
             raise LLMError(f"{first} | fallback: {second}") from second

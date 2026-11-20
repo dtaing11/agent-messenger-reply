@@ -44,7 +44,8 @@ def run(conn, proc, settings, now=NOW):
 
 def link_owner(conn, label="Dina", psid=OWNER_PSID, now=NOW):
     code = owner_accounts.create_link_code(conn, label, "dina", now)
-    return owner_accounts.link(conn, "PAGE1", psid, code, now)
+    acc = owner_accounts.link(conn, "PAGE1", psid, code, now)
+    return owner_accounts.approve(conn, acc["id"], now)
 
 
 def rows(conn, kind):
@@ -55,13 +56,22 @@ def rows(conn, kind):
 
 def test_link_with_code_from_messenger(conn, settings, proc):
     code = owner_accounts.create_link_code(conn, "Dina", "dina", NOW)
-    enqueue_message(conn, "m1", f"link {code}", psid=OWNER_PSID)
+    assert len(code) == 9 and code[4] == "-" and all(ch in owner_accounts.CODE_ALPHABET for ch in code.replace("-", ""))
+    enqueue_message(conn, "m1", f"link {code.lower().replace('-', ' ')}", psid=OWNER_PSID)
     run(conn, proc, settings)
-    assert "You're linked as Dina" in proc.responder.sent[-1][1] and "check-in" in proc.responder.sent[-1][1]
-    assert owner_accounts.find(conn, "PAGE1", OWNER_PSID)["label"] == "Dina"
+    assert "needs approval in the portal" in proc.responder.sent[-1][1]
+    assert owner_accounts.find(conn, "PAGE1", OWNER_PSID) is None  # not active until approved
+    pending = owner_accounts.pending_for(conn, "PAGE1", OWNER_PSID)
+    assert pending["label"] == "Dina"
     assert conn.execute("SELECT COUNT(*) FROM customers").fetchone()[0] == 0  # not a customer
-    fyi = rows(conn, "owner_linked")
-    assert {r["recipient"] for r in fyi} == set(settings.owner_phone_numbers)  # the other owners hear about it
+    asked = rows(conn, "owner_link_request")
+    assert {r["recipient"] for r in asked} == set(settings.owner_phone_numbers)  # the other owners hear about it
+    # while waiting, messages are neither commands nor customer chats
+    enqueue_message(conn, "m1b", "YES 1", psid=OWNER_PSID)
+    run(conn, proc, settings)
+    assert "waiting for approval" in proc.responder.sent[-1][1]
+    assert owner_accounts.approve(conn, pending["id"], NOW)["label"] == "Dina"
+    assert owner_accounts.find(conn, "PAGE1", OWNER_PSID) is not None
     assert proc.calls == []
     # the code works once
     enqueue_message(conn, "m2", f"LINK {code}", psid="SOMEONE")
@@ -75,6 +85,7 @@ def test_expired_code_and_customers_untouched(conn, settings, proc):
     with pytest.raises(owner_accounts.LinkError):
         owner_accounts.link(conn, "PAGE1", OWNER_PSID, code, NOW)
     assert owner_accounts.link_code_in("my zip is 123456") is None
+    assert owner_accounts.link_code_in("link me to the menu please") is None
     with pytest.raises(owner_accounts.LinkError):
         owner_accounts.create_link_code(conn, "  ", "dina", NOW)
     enqueue_message(conn, "m1", "1 dozen glazed please")

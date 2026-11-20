@@ -224,16 +224,72 @@ def submit_order(
         return order
 
 
+# What a late or repeated Confirm tap says once the team has decided. NO_SHOW reads as
+# "closed": missed pickups are an owner-only record and never shown to the customer.
+_DECIDED_TEXT = {
+    OrderStatus.ACCEPTED: "Order #{id} is already confirmed by our team.",
+    OrderStatus.PREPARING: "Order #{id} is already confirmed and being prepared.",
+    OrderStatus.READY: "Order #{id} is ready for pickup.",
+    OrderStatus.REJECTED: ("Our team wasn't able to accept order #{id}, so it won't be made. "
+                           "I'm happy to help you place a new order."),
+    OrderStatus.CANCELLED: "Order #{id} was cancelled, so it won't be made. I'm happy to help you place a new order.",
+    OrderStatus.EXPIRED: ("Order #{id} wasn't accepted in time, so it won't be made. "
+                          "I'm happy to help you place a new order."),
+    OrderStatus.COMPLETED: "Order #{id} is closed. I'm happy to help you place a new order.",
+    OrderStatus.NO_SHOW: "Order #{id} is closed. I'm happy to help you place a new order.",
+}
+OPEN_STATUSES = (OrderStatus.PENDING_ACCEPTANCE, OrderStatus.ACCEPTED, OrderStatus.PREPARING, OrderStatus.READY)
+
+
 def confirmation_text(order: sqlite3.Row, biz: BusinessInfo) -> str:
-    """Reply after the customer taps Confirm: repeats where to pick up."""
+    """Reply after the customer taps Confirm: repeats where to pick up. A repeated tap on an
+    order the team already decided says where it stands instead of "sent" again."""
+    status = OrderStatus(order["status"])
     pickup = local(from_db(order["pickup_time"]), biz.timezone)
-    return "\n".join([
-        f"Thank you! Order request #{order['id']} has been sent to our team for acceptance. "
-        "I'll message you once they confirm.",
-        "",
-        f"Pickup: {pickup:%a %b} {pickup.day} at {pickup:%-I:%M %p}",
-        *biz.pickup_location_lines(),
-    ])
+    where = ["", f"Pickup: {pickup:%a %b} {pickup.day} at {pickup:%-I:%M %p}", *biz.pickup_location_lines()]
+    if status == OrderStatus.PENDING_ACCEPTANCE:
+        return "\n".join([
+            f"Thank you! Order request #{order['id']} has been sent to our team for acceptance. "
+            "I'll message you once they confirm.",
+            *where,
+        ])
+    text = _DECIDED_TEXT[status].format(id=order["id"])
+    return "\n".join([text, *where]) if status in OPEN_STATUSES else text
+
+
+def submitted_order_for_modify(conn: sqlite3.Connection, customer_id: int, token: str = "") -> sqlite3.Row | None:
+    """The order a Modify tap refers to, when that summary was already confirmed. Uses the
+    summary's token when the button carries one; old buttons fall back to the customer's
+    latest open order when they have nothing in their cart."""
+    if token:
+        tok = conn.execute("SELECT * FROM confirmation_tokens WHERE token = ? AND customer_id = ?",
+                           (token, customer_id)).fetchone()
+        if tok is None:
+            return None
+        cart_row = conn.execute("SELECT status FROM carts WHERE id = ?", (tok["cart_id"],)).fetchone()
+        if cart_row is None or cart_row["status"] == "active":
+            return None
+        return conn.execute("SELECT * FROM orders WHERE cart_id = ? ORDER BY id DESC LIMIT 1",
+                            (tok["cart_id"],)).fetchone()
+    has_cart = conn.execute(
+        "SELECT 1 FROM carts c JOIN cart_items i ON i.cart_id = c.id WHERE c.customer_id = ? AND c.status = 'active'",
+        (customer_id,),
+    ).fetchone()
+    if has_cart:
+        return None
+    marks = ",".join("?" * len(OPEN_STATUSES))
+    return conn.execute(
+        f"SELECT * FROM orders WHERE customer_id = ? AND status IN ({marks}) ORDER BY id DESC LIMIT 1",
+        (customer_id, *map(str, OPEN_STATUSES)),
+    ).fetchone()
+
+
+def modify_after_submit_text(order: sqlite3.Row) -> str:
+    status = OrderStatus(order["status"])
+    if status in OPEN_STATUSES:
+        return (f"Order #{order['id']} was already sent to our team, so I can't change it here. "
+                "Tell me what you'd like to change and I'll pass it to the team.")
+    return _DECIDED_TEXT[status].format(id=order["id"])
 
 
 def format_owner_sms(conn: sqlite3.Connection, order: sqlite3.Row, biz: BusinessInfo) -> str:
