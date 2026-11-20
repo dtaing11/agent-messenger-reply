@@ -13,3 +13,16 @@ def test_freshness_answer(conn, question):
     docs = search(conn, question)
     assert docs and docs[0]["id"] == "freshness"
     assert "3 AM" in docs[0]["answer"] and "Nothing is left over" in docs[0]["answer"]
+
+
+def test_phone_number_is_asked_for_the_pickup_person(biz):
+    """Owner, 2026-11-20: staff only contact a customer who doesn't show up, so Sprinkle must not
+    say the store will reach out about the order."""
+    from app.agent.prompts import system_prompt
+    from app.timeutil import local
+    from tests.conftest import NOW
+
+    prompt = system_prompt(biz, local(NOW, biz.timezone))
+    assert "Can I have the phone number for the person who will pick up the order, please?" in prompt
+    assert "Never say the store will call, text or reach out about the order" in prompt
+    assert "so the store can reach them" not in prompt
