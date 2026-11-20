@@ -1,5 +1,5 @@
 {
-  "_comment": "Store name, address (from the owner's Google Maps link, 2026-11-20), landmark, phone and hours (4:30 AM-12:30 PM, open every day including holidays) are from the owner. Pickup lead time and booking horizon are still PLACEHOLDERS.",
+  "_comment": "Store name, address (from the owner's Google Maps link, 2026-11-20), landmark, phone and hours (4:30 AM-12:30 PM, open every day including holidays, last pickup 12:15 PM) are from the owner. Pickup lead time and booking horizon are still PLACEHOLDERS.",
   "name": "Town Donut & Breakfast",
   "location": "watson",
   "store_name": "Town Donut Watson",
@@ -42,7 +42,9 @@
   "pickup": {
     "min_lead_minutes": 30,
     "max_days_ahead": 14,
-    "slot_minutes": 15
+    "slot_minutes": 15,
+    "last_pickup_minutes_before_close": 15,
+    "notice_cutoff_hour": 3
   },
   "payment": "Payment at pickup. We do not take card details over Messenger.",
   "location_display": "Denham Springs / Watson",

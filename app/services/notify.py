@@ -41,17 +41,20 @@ def owner_recipients(conn: sqlite3.Connection, settings: Settings, now: datetime
 
 def alert_owners(conn: sqlite3.Connection, settings: Settings, kind: str, body: str, key: str,
                  order_id: int | None = None, buttons: list[list[str]] | None = None, exclude: str | None = None,
-                 now: datetime | None = None, every_channel: bool = False) -> int:
+                 now: datetime | None = None, every_channel: bool = False, attachments: list[str] | None = None) -> int:
     """Queue one alert per owner (see owner_recipients). `key` makes it idempotent across
-    retries. `buttons` ([title, command] pairs) become tap-to-reply buttons on Messenger."""
+    retries. `buttons` ([title, command] pairs) become tap-to-reply buttons on Messenger, and
+    `attachments` (customer photo paths) are sent there before the text."""
     n = 0
     for channel, to in owner_recipients(conn, settings, now, exclude, every_channel):
         fb = channel == "messenger"
         n += conn.execute(
-            """INSERT OR IGNORE INTO notifications (order_id, type, recipient, body, idempotency_key, channel, buttons)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            """INSERT OR IGNORE INTO notifications (order_id, type, recipient, body, idempotency_key, channel, buttons,
+                 attachments)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             (order_id, kind, to, body if fb else body[:1500], f"{key}:fb:{to}" if fb else f"{key}:{to}", channel,
-             json.dumps(buttons[:13]) if fb and buttons else None),
+             json.dumps(buttons[:13]) if fb and buttons else None,
+             json.dumps(attachments[:3]) if fb and attachments else None),
         ).rowcount
     return n
 

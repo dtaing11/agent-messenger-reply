@@ -9,7 +9,7 @@ from datetime import datetime
 from app.database.connection import transaction
 from app.services import custom_items, menu, phone
 from app.services.pricing import Totals, compute_totals
-from app.timeutil import from_db, to_db
+from app.timeutil import from_db, to_db, utcnow
 
 
 class CartError(Exception):
@@ -41,6 +41,7 @@ class CartLine:
     surcharge_pending: bool = False  # a surcharge applies but the store sets the amount
     needs_review: bool = False
     min_days_ahead: int = 0  # calendar days of notice this item needs (Special Design Donut: 1)
+    added_at: datetime | None = None  # when it was put in the cart (the "ordered" time for notice)
 
 
 @dataclass
@@ -68,12 +69,18 @@ class CartView:
     def needs_review(self) -> bool:
         return any(l.needs_review for l in self.lines)
 
-    def advance_notice(self) -> tuple[int, str | None]:
+    def notice_ordered_at(self, now: datetime) -> datetime:
+        """When the items needing notice were ordered: the earliest time one was added (never
+        later than now)."""
+        times = [l.added_at for l in self.lines if l.min_days_ahead and l.added_at is not None]
+        return min([*times, now])
+
+    def advance_notice(self, cutoff_hour: int = 3) -> tuple[int, str | None]:
         """(days, what to tell the customer) for the item in the cart needing the most notice."""
         line = max(self.lines, key=lambda l: l.min_days_ahead, default=None)
         if line is None or not line.min_days_ahead:
             return 0, None
-        return line.min_days_ahead, custom_items.notice_text(line.name, line.min_days_ahead)
+        return line.min_days_ahead, custom_items.notice_text(line.name, line.min_days_ahead, cutoff_hour)
 
 
 def get_or_create_cart(conn: sqlite3.Connection, customer_id: int) -> sqlite3.Row:
@@ -108,11 +115,18 @@ def _pool_selection(conn: sqlite3.Connection, item: sqlite3.Row, c: custom_items
     raw = " ".join(str(details.get(c.key) or details.get(c.label) or details.get("selection") or "").split())
     question = (f"Which {c.count} {c.label} would you like? Pick any mix of: " + "; ".join(labels) + "."
                 if labels else f"Which {c.label} would you like?")
-    if not raw or not any(n.lower() in raw.lower() for n in names):
+    low = raw.lower()
+    if not raw or not (any(n.lower() in low for n in names) or custom_items._mentions_store_choice(low)):
         raise custom_items.MissingDetails([c.key], [question])
     if len(raw) > 200:
         raise CartError("Please keep the donut selection short, like: 2 Twist (Chocolate), 2 Cinnamon Roll, 2 Pinecone.")
-    return raw
+    pool = [(r["name"], [o for ch in custom_items.parse_choices(r["choices"]) if not ch.is_pool for o in ch.options])
+            for r in menu.pool_items(conn, c.pool_category, c.pool_price_cents)]
+    others = [r["name"] for r in conn.execute("SELECT name FROM menu_items WHERE archived = 0") if r["name"] not in names]
+    try:
+        return custom_items.check_pool_mix(raw, c, pool, others)
+    except custom_items.MixError as exc:
+        raise CartError(str(exc)) from exc
 
 
 def _normalize_details(conn: sqlite3.Connection, item: sqlite3.Row, details: dict | None) -> str:
@@ -157,6 +171,7 @@ def add_item(
     quantity: int,
     modifiers: list[str] | None = None,
     details: dict | None = None,
+    now: datetime | None = None,
 ) -> CartView:
     with transaction(conn):
         cart = get_or_create_cart(conn, customer_id)
@@ -173,8 +188,8 @@ def add_item(
             conn.execute("UPDATE cart_items SET quantity = ? WHERE id = ?", (new_qty, existing["id"]))
         else:
             conn.execute(
-                "INSERT INTO cart_items (cart_id, item_id, quantity, modifiers, details) VALUES (?, ?, ?, ?, ?)",
-                (cart["id"], item_id, quantity, mods, det),
+                "INSERT INTO cart_items (cart_id, item_id, quantity, modifiers, details, added_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (cart["id"], item_id, quantity, mods, det, to_db(now or utcnow())),
             )
         _bump(conn, cart["id"])
     return view_cart(conn, customer_id)
@@ -225,6 +240,11 @@ def clear_cart(conn: sqlite3.Connection, customer_id: int) -> CartView:
     return view_cart(conn, customer_id)
 
 
+def one_line(text: str) -> str:
+    """Customer text that goes into an owner alert: one line, no control characters."""
+    return " ".join("".join(ch if ch.isprintable() else " " for ch in str(text)).split())
+
+
 def set_pickup_details(
     conn: sqlite3.Connection,
     customer_id: int,
@@ -242,11 +262,13 @@ def set_pickup_details(
         except phone.PhoneError as exc:
             raise CartError(str(exc)) from exc
     if customer_name is not None:
-        customer_name = customer_name.strip()
+        customer_name = one_line(customer_name)  # a newline could fake extra lines in the owner alert
         if not (1 <= len(customer_name) <= 80):
             raise CartError("Please give a pickup name between 1 and 80 characters.")
-    if notes is not None and len(notes) > 500:
-        raise CartError("Notes must be 500 characters or fewer.")
+    if notes is not None:
+        notes = one_line(notes)
+        if len(notes) > 500:
+            raise CartError("Notes must be 500 characters or fewer.")
     with transaction(conn):
         cart = get_or_create_cart(conn, customer_id)
         conn.execute(
@@ -275,7 +297,7 @@ def view_cart_by_id(conn: sqlite3.Connection, cart_id: int, tax_rate_bps: int = 
 
 def _view(conn: sqlite3.Connection, cart: sqlite3.Row, tax_rate_bps: int) -> CartView:
     rows = conn.execute(
-        """SELECT ci.id AS line_id, ci.item_id, ci.quantity, ci.modifiers, ci.details,
+        """SELECT ci.id AS line_id, ci.item_id, ci.quantity, ci.modifiers, ci.details, ci.added_at,
                   mi.name, mi.unit_label, mi.price_cents, mi.available, mi.custom_rules
            FROM cart_items ci JOIN menu_items mi ON mi.id = ci.item_id
            WHERE ci.cart_id = ? ORDER BY ci.id""",
@@ -305,6 +327,7 @@ def _view(conn: sqlite3.Connection, cart: sqlite3.Row, tax_rate_bps: int) -> Car
                 unit * r["quantity"], ok, details=details, surcharge_cents=extra, surcharge_pending=pending,
                 needs_review=bool(rules and rules.always_review),
                 min_days_ahead=rules.min_days_ahead if rules else 0,
+                added_at=from_db(r["added_at"]) if r["added_at"] else None,
             )
         )
     return CartView(

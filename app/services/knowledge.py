@@ -1,8 +1,8 @@
 """Approved business knowledge (FAQ) with SQLite FTS5 keyword search.
 
 Only owner-approved documents are searchable (the FTS table is maintained by triggers on
-approval_status). Semantic search with FastEmbed + Qdrant can be layered on later; prices,
-availability and order state always come from SQL tools, never from here.
+approval_status). app.services.search adds meaning-based matches (FastEmbed + Qdrant) on top;
+prices, availability and order state always come from SQL tools, never from here.
 """
 
 import json
@@ -53,8 +53,10 @@ def search(conn: sqlite3.Connection, query: str, limit: int = 4) -> list[dict]:
     words = [w for w in re.findall(r"[a-z0-9]+", query.lower()) if len(w) > 2 and w not in STOPWORDS]
     if not words:
         return []
-    # OR of prefix terms; bm25 ranks the best matches first.
-    fts_query = " OR ".join(f'"{w}"*' for w in words[:12])
+    # OR of terms; bm25 ranks the best matches first. Longer words match as prefixes ("close"
+    # finds "closed"), but short ones must match whole, so "tea" doesn't find "team". Meaning
+    # search (app.services.search) covers the rest, like "cards" for "card".
+    fts_query = " OR ".join(f'"{w}"*' if len(w) >= 4 else f'"{w}"' for w in words[:12])
     rows = conn.execute(
         """SELECT doc_id, version, question, answer, bm25(knowledge_fts) AS score FROM knowledge_fts
            WHERE knowledge_fts MATCH ? ORDER BY score LIMIT ?""",

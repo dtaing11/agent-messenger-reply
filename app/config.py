@@ -63,6 +63,10 @@ class Settings(BaseSettings):
     customer_can_cancel_accepted: bool = False
     require_customer_phone: bool = True
     pickup_check_after_minutes: int = Field(30, ge=0, le=720)  # 0 = don't ask owners
+    # Remind a customer once when they picked items but didn't give the pickup name or phone:
+    # this long after their last message (0 = never), or sooner when the pickup time is close.
+    contact_reminder_minutes: int = Field(60, ge=0, le=720)
+    contact_reminder_soon_minutes: int = Field(15, ge=1, le=120)
     # Where owner alerts go. "messenger": owners' linked Facebook accounts, with a text to the owner
     # phones as the backup whenever no linked owner can be reached on Messenger (Meta's 24-hour rule).
     owner_alert_channel: Literal["messenger", "sms", "both"] = "messenger"
@@ -76,14 +80,23 @@ class Settings(BaseSettings):
     menu_path: Path = Path("./data/menu.json")
     business_path: Path = Path("./data/business.json")
     knowledge_path: Path = Path("./data/knowledge/faq.json")
-    qdrant_url: str = "http://qdrant:6333"
+    # Meaning-based search for the menu and FAQ (FastEmbed + Qdrant), next to keyword search.
+    # With no QDRANT_URL (or an unreachable one) the index is embedded on disk: no server needed.
+    semantic_search: bool = True
+    qdrant_url: str = ""
+    vector_index_path: Path | None = None  # default: data/vector_index next to the database
+    model_cache_path: Path | None = None  # default: the repo's data/models (downloads once, ~70 MB; python -m app.download_model)
     embedding_model: str = "BAAI/bge-small-en-v1.5"
+    semantic_min_score: float = Field(0.62, ge=0.0, le=1.0)
     rag_top_k: int = 5
 
     # Runtime / portal
     # "paused": messages are recorded but the bot never replies. Start paused until setup is done.
     bot_mode: Literal["paused", "live"] = "paused"
     public_base_url: str = ""  # e.g. https://orders.example.com (the tunnel hostname)
+    # Customer photos (design-donut references). Default: an "uploads" folder next to the database.
+    uploads_path: Path | None = None
+    photo_max_mb: int = Field(8, ge=1, le=25)
     master_key_path: Path = Path("./data/keys/master.key")  # encryption key for stored credentials
     admin_session_hours: int = Field(12, ge=1, le=168)
     admin_host: str = "127.0.0.1"

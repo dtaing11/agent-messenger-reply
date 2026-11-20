@@ -8,8 +8,10 @@
   PAUSE / RESUME      stop or start automatic Messenger replies
   HELP                this list
 
-The order number may be left off when exactly one order fits. No-shows are an owner-only
-record: the customer is never told, and the assistant never sees it.
+A message only counts when it is exactly one command (spacing, case and a "#" don't matter), and
+order commands always need the order number. Anything else, like "ok see you at 5" or "no worries",
+gets the HELP list and changes nothing. No-shows are an owner-only record: the customer is never
+told, and the assistant never sees it.
 """
 
 import json
@@ -34,7 +36,7 @@ HELP = ("Commands: YES 12 (accept), NO 12 (decline), READY 12, PICKED 12 (picked
         "ORDERS (open orders), PAUSE or RESUME (bot replies).")
 
 ACTIONS: dict[str, OrderStatus] = {
-    "YES": OrderStatus.ACCEPTED, "Y": OrderStatus.ACCEPTED, "ACCEPT": OrderStatus.ACCEPTED, "OK": OrderStatus.ACCEPTED,
+    "YES": OrderStatus.ACCEPTED, "Y": OrderStatus.ACCEPTED, "ACCEPT": OrderStatus.ACCEPTED,
     "NO": OrderStatus.REJECTED, "N": OrderStatus.REJECTED, "DECLINE": OrderStatus.REJECTED, "REJECT": OrderStatus.REJECTED,
     "READY": OrderStatus.READY,
     "PICKED": OrderStatus.COMPLETED, "PICKEDUP": OrderStatus.COMPLETED, "DONE": OrderStatus.COMPLETED,
@@ -97,6 +99,12 @@ def apply_status(conn: sqlite3.Connection, settings: Settings, biz: BusinessInfo
     other owners know. Returns (ok, message for the owner)."""
     if sender is None and from_phone:
         sender = OwnerSender.phone(from_phone)
+    if target == OrderStatus.ACCEPTED:
+        row = conn.execute("SELECT status, pickup_time FROM orders WHERE id = ?", (order_id,)).fetchone()
+        if row and row["status"] == OrderStatus.PENDING_ACCEPTANCE and from_db(row["pickup_time"]) <= now:
+            when = local(from_db(row["pickup_time"]), biz.timezone)
+            return False, (f"Order #{order_id}'s pickup time ({when:%b} {when.day}, {when:%-I:%M %p}) has already passed, "
+                           f"so it can't be accepted. Reply NO {order_id} to decline it.")
     try:
         order = order_svc.transition_order(conn, order_id, target, actor=actor)
     except InvalidTransition as exc:
@@ -107,7 +115,7 @@ def apply_status(conn: sqlite3.Connection, settings: Settings, biz: BusinessInfo
 
     reply = f"Order #{order_id} {DONE_WORDS[target]}."
     if target == OrderStatus.NO_SHOW:
-        h = customers.pickup_history(conn, order["customer_id"], order["customer_phone"])
+        h = customers.pickup_history(conn, order["customer_id"])
         reply += (f" {order['customer_name']} now has {h.no_shows} missed pickup(s) on record. "
                   "You'll get a heads-up if they order again. (The customer isn't told.)")
     elif notify.order_update_text(order, target, biz):
@@ -127,10 +135,25 @@ def apply_status(conn: sqlite3.Connection, settings: Settings, biz: BusinessInfo
     return True, reply
 
 
-def _parse(body: str) -> list[str]:
-    text = re.sub(r"\bNO[\s-]+SHOW\b", "NOSHOW", (body or "").upper())
-    text = re.sub(r"\bPICKED[\s-]+UP\b", "PICKED", text)
-    return re.findall(r"[A-Z]+|\d+", text)
+SIMPLE = {"HELP": "HELP", "COMMANDS": "HELP", "MENU": "HELP", "KEEPALIVE": "KEEPALIVE",
+          "ORDERS": "ORDERS", "LIST": "ORDERS", "OPEN": "ORDERS", "PAUSE": "PAUSE", "RESUME": "RESUME", "LIVE": "RESUME"}
+_ORDER_CMD = re.compile(r"^([A-Z]+)\s*(?:#|NO\.?\s*|ORDER\s*#?\s*)?\s*(\d{1,9})$")
+
+
+def _parse(body: str) -> tuple[str, int | None] | None:
+    """(command, order number) when the whole message is exactly one command, else None."""
+    text = " ".join((body or "").upper().split())
+    text = re.sub(r"[.!]+$", "", text).strip()
+    text = re.sub(r"^NO[\s-]+SHOW\b", "NOSHOW", text)
+    text = re.sub(r"^PICKED[\s-]+UP\b", "PICKED", text)
+    if text in SIMPLE:
+        return SIMPLE[text], None
+    if text in ACTIONS:
+        return text, None  # an order command without its number: ask for it
+    m = _ORDER_CMD.match(text)
+    if m and m.group(1) in ACTIONS:
+        return m.group(1), int(m.group(2))
+    return None
 
 
 def handle(conn: sqlite3.Connection, settings: Settings, biz: BusinessInfo, sender: str | OwnerSender, body: str,
@@ -138,38 +161,33 @@ def handle(conn: sqlite3.Connection, settings: Settings, biz: BusinessInfo, send
     """Apply one owner command (a text, or a Messenger message from a linked owner) and return the reply."""
     if isinstance(sender, str):
         sender = OwnerSender.phone(sender)
-    words = _parse(body)
-    if not words:
-        return HELP
-    cmd = words[0]
-    if cmd in ("HELP", "COMMANDS", "MENU"):
+    parsed = _parse(body)
+    if parsed is None:
+        return "Sorry, I only understand exact commands, so nothing was changed. " + HELP
+    cmd, order_id = parsed
+    if cmd == "HELP":
         return HELP
     if cmd == "KEEPALIVE":
         return "Thanks! Order alerts stay on here for another 24 hours."
-    if cmd in ("ORDERS", "LIST", "OPEN"):
+    if cmd == "ORDERS":
         return _list_orders(conn, biz)
     if cmd == "PAUSE":
         # Not STOP/START: those are carrier opt-out keywords, and Twilio would stop texting this phone.
         runtime.set_values(conn, {"bot_mode": "paused"}, sender.actor)
         return "Bot paused. Messages are saved, but customers get no automatic replies. Text RESUME to turn it back on."
-    if cmd in ("RESUME", "LIVE"):
+    if cmd == "RESUME":
         if not settings.meta_app_secret.get_secret_value():
             return "Can't turn the bot on yet: add the Meta App secret in the portal first."
         runtime.set_values(conn, {"bot_mode": "live"}, sender.actor)
         return "Bot is live and replying to customers again."
 
-    target = ACTIONS.get(cmd)
-    if target is None:
-        return "Sorry, I didn't understand that. " + HELP
-    numbers = [int(w) for w in words[1:] if w.isdigit()]
-    if numbers:
-        order_id = numbers[0]
-    else:
+    target = ACTIONS[cmd]
+    if order_id is None:
         fits = [r for r in _open_orders(conn) if can_transition(r["status"], target)]
-        if len(fits) != 1:
-            return (f"Which order? Reply {cmd} and the order number, e.g. {cmd} 12." if fits
-                    else f"No order can be {DONE_WORDS[target]} right now.")
-        order_id = fits[0]["id"]
+        if not fits:
+            return f"No order can be {DONE_WORDS[target]} right now."
+        listed = ", ".join(f"#{r['id']} {r['customer_name']}" for r in fits[:5])
+        return f"Which order? Reply {cmd} and the order number, e.g. {cmd} {fits[0]['id']}. Open: {listed}."
     _, reply = apply_status(conn, settings, biz, order_id, target, sender.actor, now, sender=sender)
     return reply
 

@@ -51,8 +51,10 @@
         <label>Sold as <input name="unit_label" value="{{ it.unit_label }}" maxlength="30"><small class="muted">e.g. each, dozen, half dozen</small></label>
         <label>Max per order <input name="max_quantity" type="number" min="1" max="1000" value="{{ it.max_quantity }}"></label>
       </div>
-      <label>Description <small class="muted">(helps the bot answer questions)</small>
+      <label>Description <small class="muted">(the bot reads this to answer questions and to find the item, so keep it true: taste, what's in it)</small>
         <input name="description" value="{{ it.description }}" maxlength="300"></label>
+      <label>Search words <small class="muted">(nicknames and misspellings customers use, comma-separated; only used to find the item, never shown to customers)</small>
+        <input name="search_terms" value="{{ it.search_terms }}" maxlength="300" placeholder="e.g. longjohn, eclair, the long one"></label>
       {% set chs = it.choices|fromjson or [] %}
       {% set ch = chs[0] if chs else None %}
       {% if chs|length > 1 or (ch and (ch.pool or ch.mix)) %}

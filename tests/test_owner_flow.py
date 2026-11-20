@@ -17,7 +17,7 @@ from app.main import create_app
 from app.services import cart, customers, notify, owner_commands
 from app.services import order as order_svc
 from app.services.menu import seed_menu
-from app.timeutil import local, utcnow
+from app.timeutil import local, to_db, utcnow
 from app.workers import notifications, queue
 from app.workers.message_worker import MessageProcessor, housekeeping_once, run_once
 from tests.conftest import NOW, ROOT
@@ -102,9 +102,16 @@ def test_yes_accepts_and_notifies_customer(conn, biz, settings):
     assert [r["recipient"] for r in fyi] == [OWNER2] and "1" in fyi[0]["body"]
 
 
-def test_number_optional_when_one_order_fits(conn, customer_id, biz, settings):
+def test_order_number_always_required_and_commands_exact(conn, customer_id, biz, settings):
     o = place_order(conn, customer_id, biz, settings)
-    assert "accepted" in owner_commands.handle(conn, settings, biz, OWNER1, "YES", NOW)
+    reply = owner_commands.handle(conn, settings, biz, OWNER1, "YES", NOW)
+    assert f"Which order? Reply YES and the order number, e.g. YES {o['id']}" in reply and "Jessica" in reply
+    assert conn.execute("SELECT status FROM orders").fetchone()[0] == "PENDING_ACCEPTANCE"
+    for chat in ("ok", f"Ok see you at {o['id']}", "No problem, thanks!", f"yes {o['id']} and {o['id'] + 1}",
+                 f"ready in {o['id']} min", f"no {o['id']} worries"):
+        assert "nothing was changed" in owner_commands.handle(conn, settings, biz, OWNER1, chat, NOW), chat
+    assert conn.execute("SELECT status FROM orders").fetchone()[0] == "PENDING_ACCEPTANCE"
+    assert "accepted" in owner_commands.handle(conn, settings, biz, OWNER1, f" yes #{o['id']}. ", NOW)
     assert "can't be accepted" in owner_commands.handle(conn, settings, biz, OWNER1, f"YES {o['id']}", NOW)
     assert "No order can be declined" in owner_commands.handle(conn, settings, biz, OWNER1, "NO", NOW)
 
@@ -122,13 +129,13 @@ def test_noshow_and_warning_on_next_order(conn, customer_id, biz, settings):
     assert "HEADS UP: this customer didn't pick up 1 past order" in sms and f"#{o['id']}" in sms
 
 
-def test_noshow_matched_by_phone_across_accounts(conn, customer_id, biz, settings):
+def test_noshow_stays_with_the_messenger_account_not_the_phone(conn, customer_id, biz, settings):
     o = place_order(conn, customer_id, biz, settings, phone="225-555-0199")
     order_svc.transition_order(conn, o["id"], OrderStatus.ACCEPTED, "owner")
     order_svc.transition_order(conn, o["id"], OrderStatus.NO_SHOW, "owner")
-    other = new_customer(conn, "PSID-OTHER")
-    h = customers.pickup_history(conn, other, "+12255550199")
-    assert h.no_shows == 1
+    other = new_customer(conn, "PSID-OTHER")  # someone else who gives the same number
+    assert customers.pickup_history(conn, other).no_shows == 0
+    assert customers.pickup_history(conn, customer_id).no_shows == 1
 
 
 def test_picked_up_and_fixing_a_mistaken_noshow(conn, customer_id, biz, settings):
@@ -271,9 +278,15 @@ def post_sms(client, body: dict, token="tw-token", path="/webhooks/sms"):
                        headers={"X-Twilio-Signature": sig, "Content-Type": "application/x-www-form-urlencoded"})
 
 
+def _pickup_tomorrow(conn, order_id):
+    conn.execute("UPDATE orders SET pickup_time = ?, expires_at = NULL WHERE id = ?",
+                 (to_db(utcnow() + timedelta(days=1)), order_id))
+
+
 def test_sms_webhook_owner_command(sms_client, conn, customer_id, biz):
     client, s = sms_client
     o = place_order(conn, customer_id, biz, s)
+    _pickup_tomorrow(conn, o["id"])  # the webhook runs on the real clock
     r = post_sms(client, {"From": OWNER1, "To": "+15559990000", "Body": f"YES {o['id']}", "MessageSid": "SMx"})
     assert r.status_code == 200 and r.headers["content-type"].startswith("application/xml")
     assert f"Order #{o['id']} accepted" in r.text
@@ -311,7 +324,7 @@ def test_twist_and_long_john_need_a_flavor(conn, customer_id):
     view = cart.add_item(conn, customer_id, "twist", 1, details={"flavor": "chocolate"})
     view = cart.add_item(conn, customer_id, "twist", 1, details={"flavor": "Glazed"})
     assert [l.details for l in view.lines] == [{"flavor": "Chocolate"}, {"flavor": "Glazed"}]
-    view = cart.add_item(conn, customer_id, "filled_donut_long_john", 1, details={"flavor": "maple"})
+    view = cart.add_item(conn, customer_id, "long_john", 1, details={"flavor": "maple"})
     assert view.lines[-1].details == {"flavor": "Maple"}
     with pytest.raises(cart.CartError):
         cart.add_item(conn, customer_id, "apple_fritter", 1, details={"flavor": "Maple"})
@@ -367,6 +380,7 @@ def test_orders_and_customer_pages(logged_in, settings, biz):  # noqa: F811
     conn = connect(settings.database_path)
     cid = get_or_create_customer(conn, "PAGE1", "PSID55")["id"]
     o = place_order(conn, cid, biz, settings)
+    _pickup_tomorrow(conn, o["id"])  # the portal runs on the real clock
     r = logged_in.get("/admin/orders")
     assert "(225) 555-0123" in r.text and "Accept" in r.text
     r = logged_in.post(f"/admin/orders/{o['id']}/status", data={"target": "ACCEPTED"}, headers={"HX-Request": "true"})
@@ -392,7 +406,7 @@ def test_big_donuts_are_every_209_donut(conn, customer_id, settings, biz):
 
     seed_menu(conn, ROOT / "data/menu.json")
     names = [r["name"] for r in menu.pool_items(conn, "donuts", 209)]
-    assert set(names) == {"Cinnamon Roll", "Pinecone", "Twist"}
+    assert set(names) == {"Cinnamon Roll", "Pinecone", "Twist", "Long John"}
     ctx = tools.ToolContext(conn, customer_id, settings, biz, NOW)
     res = asyncio.run(tools.execute(ctx, "search_menu", {"query": "half dozen big donuts"}))
     item = next(i for i in res["items"] if i["item_id"] == "half_dozen_big_donuts")
@@ -464,16 +478,19 @@ def test_bubble_tea_flavors_and_toppings(conn, customer_id):
         cart.add_item(conn, customer_id, "milk_tea", 1)
     assert "Taro Milk Tea" in exc.value.questions[0] and "Oolong" not in exc.value.questions[0]
     mods = {m["name"]: m["id"] for m in menu.get_modifiers(conn, "milk_tea")}
-    v = cart.add_item(conn, customer_id, "milk_tea", 2, [mods["Tapioca Pearl"], mods["Coffee Jelly"]], {"flavor": "taro"})
+    v = cart.add_item(conn, customer_id, "milk_tea", 2, [mods["Tapioca Pearl"], mods["Coffee Jelly"]],
+                      {"flavor": "taro", "sweetness": "Regular"})
     line = v.lines[0]
-    assert line.details == {"flavor": "Taro Milk Tea"} and line.unit_price_cents == 499 + 80 + 125
+    assert line.details == {"flavor": "Taro Milk Tea", "sweetness": "Regular"} and line.unit_price_cents == 499 + 80 + 125
     assert line.line_total_cents == 2 * (499 + 80 + 125)
     for item, price in (("green_tea", 499), ("smoothie", 599), ("iced_coffee", 399)):
         assert menu.get_item(conn, item)["price_cents"] == price
         assert len(menu.get_modifiers(conn, item)) == 7
 
 
-def test_toppings_on_every_drink(conn):
+def test_toppings_only_on_the_bubble_tea_drinks(conn):
+    """Owner, 2026-11-20 (replacing "toppings on any drink"): only Green Tea, Milk Tea, Iced Coffee
+    and Smoothie take toppings."""
     from app.services import menu
 
     seed_menu(conn, ROOT / "data/menu.json")
@@ -481,4 +498,7 @@ def test_toppings_on_every_drink(conn):
     assert len(drinks) > 4
     for (d,) in drinks:
         names = {m["name"] for m in menu.get_modifiers(conn, d)}
-        assert {"Tapioca Pearl", "Coffee Jelly"} <= names, d
+        if d in ("green_tea", "milk_tea", "iced_coffee", "smoothie"):
+            assert {"Tapioca Pearl", "Coffee Jelly"} <= names, d
+        else:
+            assert not names, d

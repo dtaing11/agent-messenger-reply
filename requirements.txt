@@ -11,3 +11,7 @@ jinja2==3.1.6
 python-multipart==0.0.32
 argon2-cffi==25.1.0
 cryptography==50.0.1
+# Meaning-based menu/FAQ search. Optional at runtime: without them (or before the model has
+# downloaded) search is keyword-only. Both have macOS arm64 and linux/arm64 wheels.
+fastembed==0.9.1
+qdrant-client==1.20.0

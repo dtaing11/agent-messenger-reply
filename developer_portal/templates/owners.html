@@ -48,9 +48,14 @@
         <td>{{ a.linked_at|localtime }}</td>
         <td>{{ a.last_message_at|localtime if a.last_message_at else 'never' }}</td>
         <td>{% if not a.active %}<span class="badge">removed</span>
+          {% elif a.pending %}<span class="badge degraded">waiting for approval</span>
+            <small class="muted">used the code for {{ a.label }}</small>
           {% elif a.open %}<span class="badge healthy">on</span> <small class="muted">until {{ a.closes|localtime }}</small>
           {% else %}<span class="badge down">paused</span> <small class="muted">waiting for them to message the Page</small>{% endif %}</td>
-        <td>{% if a.active %}
+        <td>{% if a.active and a.pending %}
+          <form hx-post="/admin/owners/{{ a.id }}/approve" hx-target="#owner-result" hx-confirm="Let this Messenger account (…{{ a.psid[-4:] }}) get order alerts and accept or decline orders as {{ a.label }}?" class="inline"><button type="submit" class="small">Approve</button></form>
+          <form hx-post="/admin/owners/{{ a.id }}/remove" hx-target="#owner-result" class="inline"><button type="submit" class="secondary outline small">Reject</button></form>
+        {% elif a.active %}
           <form hx-post="/admin/owners/{{ a.id }}/test" hx-target="#owner-result" class="inline"><button type="submit" class="secondary outline small">Send test</button></form>
           <form hx-post="/admin/owners/{{ a.id }}/remove" hx-target="#owner-result" hx-confirm="Stop sending alerts to {{ a.label }}?" class="inline"><button type="submit" class="secondary outline small">Remove</button></form>
         {% endif %}</td>
@@ -67,10 +72,16 @@
     <button type="submit">Make a link code</button>
   </form>
   <div id="code-result"></div>
+  {% if lockout.wrong_codes %}
+  <p class="small">{{ lockout.wrong_codes }} wrong link code{{ 's' if lockout.wrong_codes != 1 }} in the last hour{% if lockout.locked_accounts %},
+    and {{ lockout.locked_accounts }} account{{ 's are' if lockout.locked_accounts != 1 else ' is' }} waiting out the hour{% endif %}.
+    <button class="secondary" hx-post="/admin/owners/link-lockout/clear" hx-target="#code-result">Clear wrong tries</button></p>
+  {% endif %}
   <ol class="small muted">
-    <li>Make a code here. It works once, for 15 minutes.</li>
-    <li>From the owner's own Facebook account, send the code to the store's Page in Messenger, like <code>LINK 123456</code>.</li>
-    <li>They get a "You're linked" reply, and the other owners get an FYI.</li>
+    <li>Make a code here. It works once, for 15 minutes. After 5 wrong tries, that Facebook account has to wait an hour. Wrong codes from other people never block a real code.</li>
+    <li>From the owner's own Facebook account, send the code to the store's Page in Messenger, like <code>LINK ABCD-2345</code>.</li>
+    <li>Reload this page and press <strong>Approve</strong> next to them. Nothing reaches them, and they can't change orders, until you do.</li>
+    <li>They get a "You're linked" message, and the other owners get an FYI.</li>
   </ol>
   <p class="small muted">While the Meta app is in Development mode, the Page can only message people who have a role on the app.
     Add each owner under App roles → Roles in the Meta developer dashboard (Tester is enough) and have them accept the invite.</p>

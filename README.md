@@ -19,28 +19,39 @@ order updates on Messenger, a menu editor, and customer profiles with pickup his
 | Dedup by page + message id, persisted before the 200 is returned | done |
 | Durable SQLite queue: per-customer ordering, cross-customer concurrency, retry with backoff, stale-lock recovery | done |
 | Echo handling: our own echoes ignored; staff replies from the Page inbox pause the bot for that customer | done |
-| Attachments hand off to a human | done |
+| Photos: a photo sent while ordering a Special Design Donut is saved with the order (owners see it on the Messenger alert and in the portal; Sprinkle never describes it); any other photo or file hands the chat to a human. Photos are only fetched from Facebook's own servers, up to `PHOTO_MAX_MB`, and kept in `UPLOADS_PATH` | done |
 | SQLite schema + forward-only migrations, WAL, foreign keys, FTS5 table for Phase 3 | done |
 | Menu seeding from `data/menu.json` (removed items become unavailable, never deleted) | done |
 | Cart with modifiers, quantity limits, versioning | done |
 | Integer-cent totals, configurable tax (half-up rounding) | done |
-| Pickup validation: hours, closed dates, lead time, booking horizon, slot size, DST | done |
+| Pickup validation: hours, closed dates, lead time, booking horizon, slot size, DST; the last pickup is 12:15 PM (15 minutes before closing), and Sprinkle says so whenever it gives the hours | done |
 | Confirmation tokens bound to customer + cart version + expiry | done |
 | Atomic order + owner-SMS outbox rows (one per owner phone), idempotent re-confirmation | done |
 | Order transitions with conditional updates and an audit trail; pending-order expiry; customer cancel rules | done |
 | Messenger Send API client (quick-reply Confirm / Modify; long messages split, never cut) | done |
 | AI assistant: OpenRouter tool loop (menu, FAQ, cart, pickup, summary, cancel, hand-off), fallback model, privacy routing | done |
-| Store FAQ (owner-approved docs in `data/knowledge/faq.json`, FTS5 search) | done; semantic search (FastEmbed + Qdrant) later |
+| Store FAQ (owner-approved docs in `data/knowledge/faq.json`) | done |
+| Hybrid search for the menu and FAQ: keywords (names, descriptions, search words, FTS5) plus meaning (FastEmbed `bge-small-en-v1.5` in an embedded Qdrant index), merged with reciprocal rank fusion, so "something chocolatey", "the long one with cream" or "fruity tea" find the right items. Prices, availability and approval always come from SQL. The index updates itself after menu edits in the portal; until the model has downloaded, search is keyword-only. Check results with `python -m app.search_check "your words"` | done |
+| Menu descriptions (what the bot can tell customers) and search words (nicknames and misspellings, never shown), both editable in the portal | done |
 | Owner texts via Twilio with retries; delivery status callback | done |
 | Owner text commands: `YES 12`, `NO 12`, `READY 12`, `PICKED 12`, `NOSHOW 12`, `ORDERS`, `PAUSE`, `RESUME`, `HELP` | done |
 | Customer Messenger updates on accept / decline / ready / expiry (within Meta's 24 h window) | done |
-| Pickup check: owners are asked "picked up?" after each pickup time; no-shows kept per customer (owner-only) and flagged on their next order | done |
+| Pickup check: owners are asked "picked up?" after each pickup time; no-shows kept per Messenger account (owner-only, never matched by phone number) and flagged on their next order | done |
 | Customer phone number collected with name and pickup time | done |
-| Special Design Donut must be ordered by the day before pickup (not a full 24 hours; checked on every pickup time and summary) | done |
+| One reminder when a customer picked items but never gave the pickup name or phone number: about an hour after their last message (15 minutes if the pickup time is close), once per cart, never while staff have the chat, the bot is paused, the cart was set aside, after the pickup time or outside Meta's 24-hour window (`CONTACT_REMINDER_MINUTES`, `CONTACT_REMINDER_SOON_MINUTES`) | done |
+| Special Design Donut must be ordered by the day before pickup (never same day; not a full 24 hours) and confirmed, with the pickup name and phone number, by 3 AM on the pickup day, when the team starts baking. Checked on every pickup time, summary and when the order is sent; the reminder names the deadline (`notice_cutoff_hour` in `data/business.json`) | done |
 | 3 AM text to the owners on the pickup day listing orders placed on an earlier day (`OWNER_REMINDER_HOUR`) | done |
 | Fresh start after 12 quiet hours: the AI sees only the new messages; an unfinished cart is set aside and offered back once (`SESSION_IDLE_HOURS`) | done |
 | Short menu answers on phones: per-item prices from `browse_menu`, one level at a time, tap-to-pick quick replies | done |
-| Owner alerts on Facebook Messenger: owners link their account with a one-time code (portal → Owner alerts), tap Accept/Decline, Picked up/No-show, or reply with the text commands; texts are the backup | done |
+| Owner alerts on Facebook Messenger: owners link their account with a one-time 8-character code (portal → Owner alerts) and someone approves it there; then they tap Accept/Decline, Picked up/No-show, or reply with an exact command like `YES 12`; texts are the backup | done |
+| Linking safety: 5 wrong codes lock that Messenger account out of linking for an hour; 20 wrong codes overall only warn the owners (a valid code always works, and nothing links until someone approves it in the portal). The portal's Owner alerts page shows the wrong tries and can clear them | done |
+| Owner commands are exact: the order number is always required, and anything else ("ok see you at 5") changes nothing | done |
+| No discounts through the bot: no tool takes a price; order notes, design details, the pickup name and tap buttons can't mention one; Sprinkle's replies are checked for discount promises ("10% off", "on the house", "knock a dollar off" and so on, while honest refusals pass) and fake "confirmed" claims (one rewrite, then a safe reply) | done |
+| Milk Tea and Green Tea ask how sweet (Less sweet, Regular, More sweet); no drink comes with a topping; toppings only go on Green Tea, Milk Tea, Iced Coffee and Smoothie (other drinks have no add-ons, so the cart refuses them), and Sprinkle offers them once, leading with tapioca pearls. The Iced Coffee is the house blend; only Coffee and Cappuccino are Community Coffee (and replies saying otherwise are rewritten) | done |
+| Free-text mixes are checked: counts must add up to the box, sprinkles only on icing flavors, Big Donuts only from the $2.09 donuts; "any" or "random" is accepted only on its own (store's choice), never to slip past these checks | done |
+| Filled Donut (Glazed, Chocolate Icing or Powdered Sugar outside; Bavarian Cream, Blueberry, Raspberry, Lemon or Strawberry jelly filling) is its own item, separate from the Long John ($2.09, a Big Donut) | done |
+| Store FAQ includes freshness: the staff start baking at 3 AM every day and nothing is left over | done |
+| Each reply's cart changes are all or nothing: an error part way through is undone, so a retry never adds items twice | done |
 | Meta's 24-hour rule for owner alerts: daily 👍 check-in sent inside the window; undeliverable alerts are held and sent when the owner next writes, and texted if no owner can be reached | done |
 | Menu editor in the portal (prices, items, add-ons, categories, flavors) | done |
 | Developer portal | done (see below) |
@@ -80,7 +91,8 @@ backups page, log viewer.
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements-dev.txt
 cp .env.example .env          # set META_VERIFY_TOKEN, META_APP_SECRET, etc.
-pytest -q
+python -m app.download_model  # the search model, once (~70 MB into data/models; otherwise it downloads on first start)
+pytest -q                     # SPRINKLE_REAL_MODEL=1 pytest -q also runs the search tests on the real model
 python -m app.run_dev                     # webhook app :8000 + portal :8001 + worker
 cloudflared tunnel --url http://localhost:8000   # public URL for Meta (in another terminal)
 ```
@@ -106,13 +118,13 @@ Each is configurable in `.env` (or `data/*.json`) so the answer doesn't need a c
 
 | Question | Assumed for now | Setting |
 |---|---|---|
-| Real menu and prices | **Confirmed:** from the menu board; extras (meat $0.99, egg/cheese $0.50) are modifiers; biscuits and burritos are separate items at the same price; Twist, Long John and Icing donuts need a flavor; sprinkles only on icing flavors; "Big Donuts" = every single donut priced $2.09 | `data/menu.json` or the portal Menu page |
+| Real menu and prices | **Confirmed:** from the menu board; extras (meat $0.99, egg/cheese $0.50) are modifiers; biscuits and burritos are separate items at the same price; Twist, Long John and Icing donuts need a flavor; Filled Donut needs an outside and a filling; sprinkles only on icing flavors; "Big Donuts" = every single donut priced $2.09 | `data/menu.json` or the portal Menu page |
 | Pickup location | **Confirmed:** Town Donut Watson, Oak Point Plaza next to Subway, 35505 LA-16 #3C, Denham Springs, LA 70706 (shown on every summary and confirmation) | `data/business.json` |
 | Customer phone required | Yes | `REQUIRE_CUSTOMER_PHONE` |
 | When to ask owners "picked up?" | 30 min after pickup time | `PICKUP_CHECK_AFTER_MINUTES` (`0` = never) |
 | Store hours, holidays, lead time | **Confirmed:** 4:30 AM–12:30 PM every day, no holiday closures. Assumed: 30 min lead; 14 days ahead; 15 min slots | `data/business.json` |
 | Charge tax in the summary? | **Confirmed: no.** Summaries and owner SMS say prices are before tax and remind the customer tax is added at pickup | `TAX_RATE_BPS=0` |
-| Pending order expiry | Unanswered orders expire after 120 min | `PENDING_ORDER_EXPIRY_MINUTES` (`0` = never) |
+| Pending order expiry | Unanswered orders expire 120 min after the store is open (an evening order waits for the morning), and never later than the pickup time. Owners can't accept an order whose pickup time has passed. | `PENDING_ORDER_EXPIRY_MINUTES` (`0` = only at the pickup time) |
 | Customer cancellation | Allowed while pending; after acceptance only the owner can cancel | `CUSTOMER_CAN_CANCEL_ACCEPTED` |
 | Owner phones | **Confirmed: two.** Every number gets the order SMS and may send commands | `OWNER_PHONE_NUMBERS` (comma-separated) |
 | Staff reply by hand? | Yes, and a manual reply pauses the bot for that customer | `PAUSE_BOT_ON_STAFF_REPLY` |

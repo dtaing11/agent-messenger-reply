@@ -19,8 +19,8 @@ from app.agent.state_machine import InvalidTransition, OrderStatus, assert_trans
 from app.config import Settings
 from app.database.connection import transaction
 from app.services import cart as cart_svc
-from app.services import customers, notify
-from app.services.business import BusinessInfo, validate_pickup_time
+from app.services import customers, notify, photos
+from app.services.business import BusinessInfo, staffed_from, validate_pickup_time
 from app.services.phone import display as phone_display
 from app.services.pricing import money
 from app.timeutil import from_db, local, to_db
@@ -46,6 +46,7 @@ LONG_NAME_NOTE = "Names longer than 7 letters have an extra charge. Our team wil
 
 
 def _detail_lines(details: dict, indent: str) -> list[str]:
+    details = {k: cart_svc.one_line(v) if isinstance(v, str) else v for k, v in details.items()}
     out = []
     if details.get("message"):
         out.append(f'{indent}Message: "{details["message"]}"')
@@ -86,8 +87,8 @@ def _check_ready(view: cart_svc.CartView, biz: BusinessInfo, now: datetime, requ
         raise OrderError("Still needed before I can summarize: " + ", ".join(missing) + ".")
     if view.unavailable:
         raise SummaryChanged("No longer available: " + ", ".join(view.unavailable) + ".")
-    days, notice = view.advance_notice()
-    pv = validate_pickup_time(biz, view.pickup_time, now, days, notice)
+    days, notice = view.advance_notice(biz.pickup.notice_cutoff_hour)
+    pv = validate_pickup_time(biz, view.pickup_time, now, days, notice, ordered_at=view.notice_ordered_at(now))
     if not pv.ok:
         raise SummaryChanged(pv.reason or "That pickup time is no longer available.")
 
@@ -180,11 +181,7 @@ def submit_order(
             raise SummaryChanged("Prices changed since your summary. Please review the updated total.")
 
         needs_review = view.needs_review or view.totals.subtotal_cents >= settings.large_order_threshold_cents > 0
-        expires_at = (
-            to_db(now + timedelta(minutes=settings.pending_order_expiry_minutes))
-            if settings.pending_order_expiry_minutes
-            else None
-        )
+        expires_at = to_db(pending_expiry(biz, now, view.pickup_time, settings.pending_order_expiry_minutes))
         cur = conn.execute(
             """INSERT INTO orders (customer_id, cart_id, cart_version, customer_name, customer_phone, location, pickup_time,
                  subtotal_cents, tax_cents, total_cents, status, notes, needs_review, expires_at)
@@ -209,9 +206,11 @@ def submit_order(
             (order_id, str(OrderStatus.PENDING_ACCEPTANCE)),
         )
         order = conn.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
+        photos.move_to_order(conn, view.cart_id, order_id)  # design reference photos go with the order
         notify.alert_owners(conn, settings, "new_order", format_owner_sms(conn, order, biz), f"order:{order_id}:new_order",
                             order_id=order_id, now=now, buttons=[[f"Accept #{order_id}", f"YES {order_id}"],
-                                                                 [f"Decline #{order_id}", f"NO {order_id}"]])
+                                                                 [f"Decline #{order_id}", f"NO {order_id}"]],
+                            attachments=[p["path"] for p in photos.for_order(conn, order_id)])
         conn.execute("UPDATE confirmation_tokens SET used_at = ? WHERE token = ?", (to_db(now), token))
         conn.execute(
             "UPDATE carts SET status = 'submitted', updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?",
@@ -224,16 +223,80 @@ def submit_order(
         return order
 
 
+# What a late or repeated Confirm tap says once the team has decided. NO_SHOW reads as
+# "closed": missed pickups are an owner-only record and never shown to the customer.
+_DECIDED_TEXT = {
+    OrderStatus.ACCEPTED: "Order #{id} is already confirmed by our team.",
+    OrderStatus.PREPARING: "Order #{id} is already confirmed and being prepared.",
+    OrderStatus.READY: "Order #{id} is ready for pickup.",
+    OrderStatus.REJECTED: ("Our team wasn't able to accept order #{id}, so it won't be made. "
+                           "I'm happy to help you place a new order."),
+    OrderStatus.CANCELLED: "Order #{id} was cancelled, so it won't be made. I'm happy to help you place a new order.",
+    OrderStatus.EXPIRED: ("Order #{id} wasn't accepted in time, so it won't be made. "
+                          "I'm happy to help you place a new order."),
+    OrderStatus.COMPLETED: "Order #{id} is closed. I'm happy to help you place a new order.",
+    OrderStatus.NO_SHOW: "Order #{id} is closed. I'm happy to help you place a new order.",
+}
+OPEN_STATUSES = (OrderStatus.PENDING_ACCEPTANCE, OrderStatus.ACCEPTED, OrderStatus.PREPARING, OrderStatus.READY)
+
+
+def pending_expiry(biz: BusinessInfo, now: datetime, pickup: datetime, minutes: int) -> datetime:
+    """When an unanswered order expires. The clock starts once the store is open (owners
+    asleep overnight don't lose an evening order), and never runs past the pickup time."""
+    if not minutes:
+        return pickup
+    return min(staffed_from(biz, now) + timedelta(minutes=minutes), pickup)
+
+
 def confirmation_text(order: sqlite3.Row, biz: BusinessInfo) -> str:
-    """Reply after the customer taps Confirm: repeats where to pick up."""
+    """Reply after the customer taps Confirm: repeats where to pick up. A repeated tap on an
+    order the team already decided says where it stands instead of "sent" again."""
+    status = OrderStatus(order["status"])
     pickup = local(from_db(order["pickup_time"]), biz.timezone)
-    return "\n".join([
-        f"Thank you! Order request #{order['id']} has been sent to our team for acceptance. "
-        "I'll message you once they confirm.",
-        "",
-        f"Pickup: {pickup:%a %b} {pickup.day} at {pickup:%-I:%M %p}",
-        *biz.pickup_location_lines(),
-    ])
+    where = ["", f"Pickup: {pickup:%a %b} {pickup.day} at {pickup:%-I:%M %p}", *biz.pickup_location_lines()]
+    if status == OrderStatus.PENDING_ACCEPTANCE:
+        return "\n".join([
+            f"Thank you! Order request #{order['id']} has been sent to our team for acceptance. "
+            "I'll message you once they confirm.",
+            *where,
+        ])
+    text = _DECIDED_TEXT[status].format(id=order["id"])
+    return "\n".join([text, *where]) if status in OPEN_STATUSES else text
+
+
+def submitted_order_for_modify(conn: sqlite3.Connection, customer_id: int, token: str = "") -> sqlite3.Row | None:
+    """The order a Modify tap refers to, when that summary was already confirmed. Uses the
+    summary's token when the button carries one; old buttons fall back to the customer's
+    latest open order when they have nothing in their cart."""
+    if token:
+        tok = conn.execute("SELECT * FROM confirmation_tokens WHERE token = ? AND customer_id = ?",
+                           (token, customer_id)).fetchone()
+        if tok is None:
+            return None
+        cart_row = conn.execute("SELECT status FROM carts WHERE id = ?", (tok["cart_id"],)).fetchone()
+        if cart_row is None or cart_row["status"] == "active":
+            return None
+        return conn.execute("SELECT * FROM orders WHERE cart_id = ? ORDER BY id DESC LIMIT 1",
+                            (tok["cart_id"],)).fetchone()
+    has_cart = conn.execute(
+        "SELECT 1 FROM carts c JOIN cart_items i ON i.cart_id = c.id WHERE c.customer_id = ? AND c.status = 'active'",
+        (customer_id,),
+    ).fetchone()
+    if has_cart:
+        return None
+    marks = ",".join("?" * len(OPEN_STATUSES))
+    return conn.execute(
+        f"SELECT * FROM orders WHERE customer_id = ? AND status IN ({marks}) ORDER BY id DESC LIMIT 1",
+        (customer_id, *map(str, OPEN_STATUSES)),
+    ).fetchone()
+
+
+def modify_after_submit_text(order: sqlite3.Row) -> str:
+    status = OrderStatus(order["status"])
+    if status in OPEN_STATUSES:
+        return (f"Order #{order['id']} was already sent to our team, so I can't change it here. "
+                "Tell me what you'd like to change and I'll pass it to the team.")
+    return _DECIDED_TEXT[status].format(id=order["id"])
 
 
 def format_owner_sms(conn: sqlite3.Connection, order: sqlite3.Row, biz: BusinessInfo) -> str:
@@ -241,10 +304,10 @@ def format_owner_sms(conn: sqlite3.Connection, order: sqlite3.Row, biz: Business
         "SELECT * FROM order_items WHERE order_id = ? ORDER BY id", (order["id"],)
     ).fetchall()
     pickup = local(from_db(order["pickup_time"]), biz.timezone)
-    history = customers.pickup_history(conn, order["customer_id"], order["customer_phone"], exclude_order_id=order["id"])
+    history = customers.pickup_history(conn, order["customer_id"], exclude_order_id=order["id"])
     lines = [
         f"NEW ORDER #{order['id']}",
-        f"Customer: {order['customer_name']}",
+        f"Customer: {cart_svc.one_line(order['customer_name'] or '')}",
         f"Phone: {phone_display(order['customer_phone']) or 'not given'}",
         customers.owner_history_line(history, biz),
         "Source: Facebook Messenger",
@@ -259,12 +322,16 @@ def format_owner_sms(conn: sqlite3.Connection, order: sqlite3.Row, biz: Business
         lines += _detail_lines(json.loads(it["details_snapshot"]), indent="  ")
         if it["surcharge_pending"]:
             lines.append("  LONG NAME: add surcharge and tell the customer")
+    shared = photos.for_order(conn, order["id"])
+    if shared:
+        lines.append(f"Photo: the customer sent {len(shared)} reference photo{'s' if len(shared) > 1 else ''} "
+                     "(on Messenger alerts and in the portal under Orders)")
     lines.append("")
     if order["tax_cents"]:
         lines.append(f"Total: {money(order['total_cents'])} (incl. tax {money(order['tax_cents'])})")
     else:
         lines.append(f"Subtotal: {money(order['subtotal_cents'])} (before tax)")
-    lines += ["Payment: At pickup", "Status: Awaiting acceptance", f"Notes: {order['notes'] or 'None'}"]
+    lines += ["Payment: At pickup", "Status: Awaiting acceptance", f"Notes: {cart_svc.one_line(order['notes'] or '') or 'None'}"]
     if order["needs_review"]:
         lines.append("REVIEW: custom design or large order, please check details.")
     lines += ["", f"Reply YES {order['id']} to accept or NO {order['id']} to decline."]

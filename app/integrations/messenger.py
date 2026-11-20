@@ -1,5 +1,7 @@
 """Meta Send API client. Not exercised live yet (no Meta app exists); covered by mocked tests."""
 
+import json
+
 import httpx
 
 from app.config import Settings
@@ -67,6 +69,20 @@ class MessengerClient:
         resp.raise_for_status()
         return resp.json()
 
+    async def send_image_file(self, psid: str, data: bytes, mime: str, filename: str,
+                              messaging_type: str = "UPDATE") -> dict:
+        """Upload and send an image in one call (used for a customer's photo in an owner alert)."""
+        token = self._settings.meta_page_access_token.get_secret_value()
+        form = {
+            "recipient": json.dumps({"id": psid}),
+            "messaging_type": messaging_type,
+            "message": json.dumps({"attachment": {"type": "image", "payload": {"is_reusable": False}}}),
+        }
+        resp = await self._http.post(self._url, data=form, files={"filedata": (filename, data, mime)},
+                                     headers={"Authorization": f"Bearer {token}"})
+        resp.raise_for_status()
+        return resp.json()
+
     async def send_text(self, psid: str, text: str, messaging_type: str = "RESPONSE", tag: str | None = None) -> dict:
         result: dict = {}
         for part in split_message(text):
@@ -107,7 +123,7 @@ class MessengerClient:
                 "text": last,
                 "quick_replies": [
                     {"content_type": "text", "title": "Confirm Order", "payload": POSTBACK_CONFIRM + token},
-                    {"content_type": "text", "title": "Modify", "payload": POSTBACK_MODIFY},
+                    {"content_type": "text", "title": "Modify", "payload": f"{POSTBACK_MODIFY}:{token}"},
                 ],
             },
         })

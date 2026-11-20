@@ -22,16 +22,10 @@ class PickupHistory:
     last_no_show_pickup: str | None  # UTC db timestamp
 
 
-def _match(customer_id: int, phone: str | None) -> tuple[str, list]:
-    if phone:
-        return "(customer_id = ? OR customer_phone = ?)", [customer_id, phone]
-    return "customer_id = ?", [customer_id]
-
-
-def pickup_history(conn: sqlite3.Connection, customer_id: int, phone: str | None = None,
-                   exclude_order_id: int | None = None) -> PickupHistory:
-    """Past orders by this Messenger account, or by anyone who gave the same phone number."""
-    where, params = _match(customer_id, phone)
+def pickup_history(conn: sqlite3.Connection, customer_id: int, exclude_order_id: int | None = None) -> PickupHistory:
+    """Past orders by this Messenger account only. Not matched by phone number: anyone can
+    type someone else's number, and a no-show must never land on the wrong person."""
+    where, params = "customer_id = ?", [customer_id]
     if exclude_order_id is not None:
         where += " AND id != ?"
         params.append(exclude_order_id)

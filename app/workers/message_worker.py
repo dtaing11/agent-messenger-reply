@@ -30,7 +30,7 @@ from app.integrations.messenger import (
     MessengerClient,
 )
 from app.services import conversation as conv_svc
-from app.services import notify, owner_accounts, owner_commands, sessions
+from app.services import notify, owner_accounts, owner_commands, photos, reminders, search, sessions, turns
 from app.services import order as order_svc
 from app.services.business import BusinessInfo, load_business
 from app.settings.runtime import effective_settings, set_marker
@@ -66,6 +66,12 @@ async def default_agent(conn: sqlite3.Connection, customer_id: int, settings: Se
     return settings.placeholder_reply
 
 
+def is_sticker(msg: dict) -> bool:
+    """A like (👍) or sticker. Messenger sends these as image attachments with a sticker id."""
+    return bool(msg.get("sticker_id")) or any((a.get("payload") or {}).get("sticker_id")
+                                               for a in msg.get("attachments") or [])
+
+
 @dataclass(frozen=True)
 class _Ctx:
     """Everything one event is processed with: a pinned settings snapshot and its client."""
@@ -86,7 +92,9 @@ class MessageProcessor:
         responder: Responder | Callable[[Settings], Responder],
         agent: AgentHandler | None = None,
         secret_store: SecretStore | None = None,
+        fetch_photo: Callable[[str, int], Awaitable[bytes]] | None = None,
     ):
+        self._fetch_photo = fetch_photo or photos.fetch
         self.base_settings = settings
         self.biz = biz
         self._responder_factory = responder if callable(responder) and not hasattr(responder, "send_text") else (lambda s: responder)
@@ -115,6 +123,8 @@ class MessageProcessor:
 
         if event.event_type == "customer_update":
             return await self._handle_customer_update(ctx, p, event.external_event_id)
+        if event.event_type == reminders.EVENT_TYPE:
+            return await self._handle_contact_reminder(ctx, p, event.external_event_id)
         cid, raw = ctx.customer_id, p["event"]
 
         if event.event_type == "echo":
@@ -126,33 +136,119 @@ class MessageProcessor:
         if event.event_type == "postback":
             payload = raw["postback"].get("payload", "")
             conv_svc.record_message(conn, cid, "customer", f"[button] {raw['postback'].get('title', payload)}", event.external_event_id)
-            return "done" if paused else await self._handle_payload(ctx, payload)
+            if paused or not conv_svc.get_conversation(conn, cid)["bot_enabled"]:
+                return "done"  # staff have this chat: a tap is recorded, never acted on
+            return await self._handle_payload(ctx, payload)
 
         msg = raw["message"]
         qr_payload = (msg.get("quick_reply") or {}).get("payload", "")
         if msg.get("quick_reply") and not qr_payload.startswith(PICK):
             conv_svc.record_message(conn, cid, "customer", msg.get("text") or "[quick reply]", msg["mid"])
-            return "done" if paused else await self._handle_payload(ctx, qr_payload)
+            if paused or not conv_svc.get_conversation(conn, cid)["bot_enabled"]:
+                return "done"  # staff have this chat: Confirm/Modify taps don't submit or change anything
+            return await self._handle_payload(ctx, qr_payload)
 
         # A tapped option (offer_choices) counts as if the customer typed the full option.
         text = (qr_payload.removeprefix(PICK) if qr_payload else msg.get("text") or "").strip()
+        attachments = msg.get("attachments") or []
+        if not text and is_sticker(msg):
+            text = "👍"  # a like or sticker, not a photo to pass on
         if not text:
-            # Attachments, stickers, etc. are not supported: hand off to a person.
+            images = [a for a in attachments if a.get("type") == "image" and (a.get("payload") or {}).get("url")]
+            if images:
+                return await self._handle_photos(ctx, msg["mid"], images, paused)
+            # Voice notes, videos, files, etc. are not supported: hand off to a person.
             conv_svc.record_message(conn, cid, "customer", "[attachment]", msg["mid"])
             if not paused and conv_svc.get_conversation(conn, cid)["bot_enabled"]:
-                self._hand_off(ctx, "customer sent a photo or attachment", key=f"handoff:{msg['mid']}")
+                self._hand_off(ctx, "customer sent an attachment", key=f"handoff:{msg['mid']}")
                 await self._reply(ctx, "Thanks! I've passed this to our team, and someone will reply here soon.")
             return "done"
 
-        conv_svc.record_message(conn, cid, "customer", text[:4000], msg["mid"])
+        conv_svc.record_message(conn, cid, "customer", conv_svc.customer_text(text[:4000]), msg["mid"])
         if paused or not conv_svc.get_conversation(conn, cid)["bot_enabled"]:
             return "done"  # paused or human handoff: stay silent
-        if await self._resend_saved_reply(ctx, msg["mid"]):
-            return "done"  # a retry after a failed send: don't run the AI (and change the cart) twice
-        sessions.maybe_start_session(conn, cid, msg["mid"], settings.session_idle_hours)
-        result = await self.agent(conn, cid, settings, self.biz, now)
-        await self._deliver(ctx, msg["mid"], result)
+        await self._run_ai(ctx, msg["mid"])
         return "done"
+
+    async def _handle_photos(self, ctx: _Ctx, mid: str, images: list[dict], paused: bool) -> str:
+        """Owner's simple version (no image AI): save the photo. While ordering a Special Design
+        Donut it's kept with the cart and the assistant carries on. Once a design order is in, a
+        photo goes with that order and straight to the owners. Anything else goes to a person.
+        Only the first few photos of one message are kept, and the customer is told."""
+        conn, cid = ctx.conn, ctx.customer_id
+        saved, failed = [], []
+        for seq, a in enumerate(images[:photos.MAX_PER_MESSAGE]):
+            done = photos.existing(conn, mid, seq)
+            if done is None:
+                try:
+                    data = await self._fetch_photo(a["payload"]["url"], ctx.settings.photo_max_mb * 1024 * 1024)
+                    done = photos.save(conn, ctx.settings, cid, mid, seq, data)
+                except photos.PhotoError as exc:
+                    done = photos.record_failure(conn, cid, mid, seq, str(exc))
+            (saved if done.path else failed).append(done)
+        if failed:
+            log.warning("could not keep %d photo(s) from customer %s: %s", len(failed), cid, failed[0].error)
+        dropped = max(0, len(images) - photos.MAX_PER_MESSAGE)
+        if dropped:
+            log.warning("customer %s sent %d photos in one message; kept the first %d", cid, len(images),
+                        photos.MAX_PER_MESSAGE)
+        ids = [p.id for p in saved]
+        conv = conv_svc.get_conversation(conn, cid)
+        session_start = conv["session_start_message_id"] or 0
+        order = None
+        for_design = bool(ids) and photos.design_in_cart(conn, cid)
+        if ids and not for_design:
+            order = photos.open_design_order(conn, cid, ctx.now)
+            for_design = order is not None or photos.asking_for_design(conn, cid, session_start)
+        if for_design:
+            note = photos.history_note(ids, order["id"] if order else None, dropped)
+        elif ids:
+            note = f"[The customer sent a photo ({', '.join(f'#{i}' for i in ids)}).]"
+        else:
+            note = "[The customer sent a photo, but it couldn't be saved.]"
+        conv_svc.record_message(conn, cid, "customer", note, mid)
+        if order is not None:  # the owners need it even if staff have the chat
+            photos.attach_to_order(conn, cid, order["id"], ids)
+            notify.alert_owners(
+                conn, ctx.settings, "order_photo",
+                f"Town Donut: {notify.customer_label(conn, cid)} sent {len(ids)} more photo{'s' if len(ids) > 1 else ''} "
+                f"for order #{order['id']} (Special Design Donut). It's on this alert and in the portal under Orders.",
+                f"order:{order['id']}:photo:{mid}", order_id=order["id"], now=ctx.now,
+                attachments=[p.path for p in saved])
+        if paused or not conv["bot_enabled"]:
+            return "done"  # staff have the chat; the photo is in the portal for them
+        too_many = (f"I can only keep {photos.MAX_PER_MESSAGE} photos from one message, so I saved the first "
+                    f"{photos.MAX_PER_MESSAGE}. If the others matter, please send them in a new message.")
+        if for_design:
+            if order is None:
+                photos.attach_to_cart(conn, cid, ids)
+            await self._run_ai(ctx, mid)
+            if dropped and conv_svc.record_message(conn, cid, "assistant", too_many, f"photos-cap:{mid}"):
+                await ctx.responder.send_text(ctx.psid, too_many)
+            return "done"
+        if await self._resend_saved_reply(ctx, mid):
+            return "done"
+        reason = "customer sent a photo" if ids else "customer sent a photo that couldn't be saved"
+        self._hand_off(ctx, reason, key=f"handoff:{mid}", attachments=[p.path for p in saved])
+        reply = ("Thanks for the photo! I've passed it to our team, and someone will reply here soon." if ids else
+                 "Sorry, I couldn't open that photo. I've let our team know, and someone will reply here soon.")
+        if dropped and ids:
+            reply += " " + too_many
+        conv_svc.record_message(conn, cid, "assistant", reply, f"reply:{mid}")
+        await ctx.responder.send_text(ctx.psid, reply)
+        return "done"
+
+    async def _run_ai(self, ctx: _Ctx, mid: str) -> None:
+        conn, cid, settings = ctx.conn, ctx.customer_id, ctx.settings
+        if await self._resend_saved_reply(ctx, mid):
+            return  # a retry after a failed send: don't run the AI (and change the cart) twice
+        sessions.maybe_start_session(conn, cid, mid, settings.session_idle_hours)
+        if turns.begin(conn, cid, mid):
+            log.warning("retrying message for customer %s from its saved cart", cid)
+        result = await self.agent(conn, cid, settings, self.biz, ctx.now)
+        if isinstance(result, AgentResult) and result.error:
+            turns.rollback(conn, cid, mid)  # all or nothing: the AI failed part way
+        await self._deliver(ctx, mid, result)
 
     async def _handle_owner(self, conn: sqlite3.Connection, settings: Settings, event: queue.QueuedEvent,
                             now: datetime) -> str | None:
@@ -168,24 +264,36 @@ class MessageProcessor:
         payload = (msg.get("quick_reply") or {}).get("payload", "") or (raw.get("postback") or {}).get("payload", "")
         text = (msg.get("text") or (raw.get("postback") or {}).get("title") or "").strip()
         code = owner_accounts.link_code_in(text)
-        if owner is None and not code:
+        pending = owner_accounts.pending_for(conn, p["page_id"], psid) if owner is None else None
+        if owner is None and not code and not pending:
             return None
         responder = self._responder_factory(settings)
+        if owner is None and not code:
+            conn.execute("UPDATE owner_accounts SET last_message_at = ? WHERE id = ?", (to_db(now), pending["id"]))
+            await responder.send_text(psid, "This account is waiting for approval in the portal (Owner alerts). "
+                                            "You'll get a message here once it's approved.")
+            return "done"
         if owner is None:
             try:
-                owner = owner_accounts.link(conn, p["page_id"], psid, code, now)
+                acc = owner_accounts.link(conn, p["page_id"], psid, code, now)
             except owner_accounts.LinkError as exc:
+                if exc.alarm:
+                    notify.alert_owners(conn, settings, "owner_link_alarm",
+                                        "Town Donut bot: someone sent the Page many wrong owner link codes in the last "
+                                        "hour. Nothing is linked unless you approve it in the portal (Owner alerts), so "
+                                        "don't approve an account you don't recognize.",
+                                        f"owner_link_alarm:{to_db(now)[:13]}", now=now, every_channel=True)
                 await responder.send_text(psid, str(exc))
                 return "done"
-            notify.alert_owners(conn, settings, "owner_linked",
-                                f"FYI: {owner['label']} linked a Facebook account for Town Donut order alerts.",
-                                f"owner_linked:{owner['id']}:{owner['linked_at']}", exclude=psid, now=now,
-                                every_channel=True)  # a new account that can accept orders: tell everyone
+            # Not active until someone approves it in the portal; tell everyone it's waiting.
+            notify.alert_owners(conn, settings, "owner_link_request",
+                                f"Town Donut bot: the owner link code for {acc['label']} was used (Messenger account "
+                                f"…{psid[-4:]}). Approve it in the portal (Owner alerts) if that's right.",
+                                f"owner_link_request:{acc['id']}:{acc['linked_at']}", exclude=psid, now=now,
+                                every_channel=True)
             await responder.send_text(psid, (
-                f"You're linked as {owner['label']}. New orders, pickup checks and 3 AM reminders will come here. "
-                "Tap the buttons on an alert, or reply YES 12, NO 12, READY 12, PICKED 12 or NOSHOW 12. Reply HELP for all commands.\n\n"
-                "Facebook only lets the Page message you within 24 hours of your last message, so I'll send a daily "
-                "check-in. Tap 👍 on it to keep alerts coming."))
+                f"Thanks, {acc['label']}! Before alerts start, this account needs approval in the portal "
+                "(Owner alerts → Approve). You'll get a message here once it's approved."))
             return "done"
         held = owner_accounts.touch(conn, owner["id"], now)
         if payload.startswith(OWNER_CMD):
@@ -219,6 +327,7 @@ class MessageProcessor:
                                     with_buttons_note(result.text, result.quick_replies), f"reply:{mid}")
         if result.summary:
             conv_svc.record_message(ctx.conn, ctx.customer_id, "assistant", result.summary.text, f"reply:{mid}:summary")
+        turns.finish(ctx.conn, mid, ctx.now)  # the reply is saved: a retry now resends it instead
         if result.text and result.quick_replies:
             await ctx.responder.send_choices(ctx.psid, result.text, result.quick_replies)
         elif result.text:
@@ -248,9 +357,10 @@ class MessageProcessor:
                     await ctx.responder.send_text(ctx.psid, text)
         return bool(rows)
 
-    def _hand_off(self, ctx: _Ctx, reason: str, key: str) -> None:
+    def _hand_off(self, ctx: _Ctx, reason: str, key: str, attachments: list[str] | None = None) -> None:
         conv_svc.set_bot_enabled(ctx.conn, ctx.customer_id, False, reason=reason[:200])
-        notify.alert_owners(ctx.conn, ctx.settings, "handoff", notify.handoff_sms(ctx.conn, ctx.customer_id, reason), key)
+        notify.alert_owners(ctx.conn, ctx.settings, "handoff", notify.handoff_sms(ctx.conn, ctx.customer_id, reason), key,
+                            attachments=attachments)
 
     async def _handle_customer_update(self, ctx: _Ctx, p: dict, event_key: str) -> str:
         """Order status message triggered by an owner (or expiry). Sent as UPDATE, only inside
@@ -263,6 +373,24 @@ class MessageProcessor:
             return "ignored"
         await ctx.responder.send_update(ctx.psid, p["text"])
         conv_svc.record_message(ctx.conn, ctx.customer_id, "assistant", p["text"], key)
+        return "done"
+
+    async def _handle_contact_reminder(self, ctx: _Ctx, p: dict, event_key: str) -> str:
+        """The one reminder about a missing pickup name or phone number. Everything is checked
+        again here: if the customer wrote since it was queued, the reply to that handles it."""
+        key = f"reminder:{event_key}"
+        if ctx.conn.execute("SELECT 1 FROM messages WHERE external_message_id = ?", (key,)).fetchone():
+            return "done"  # already sent (retry after a crash)
+        conv = conv_svc.get_conversation(ctx.conn, ctx.customer_id)
+        cart = ctx.conn.execute("SELECT customer_id FROM carts WHERE id = ?", (int(p["cart_id"]),)).fetchone()
+        if cart is None or cart["customer_id"] != ctx.customer_id or conv["last_customer_message_at"] != p.get("last_customer_message_at"):
+            return "ignored"
+        due = reminders.still_due(ctx.conn, ctx.settings, self.biz, int(p["cart_id"]), ctx.now)
+        if not due.due:
+            return "ignored"
+        text = reminders.reminder_text(due.missing, due.deadline, due.item)
+        await ctx.responder.send_update(ctx.psid, text)
+        conv_svc.record_message(ctx.conn, ctx.customer_id, "assistant", text, key)
         return "done"
 
     def _handle_echo(self, ctx: _Ctx, raw: dict) -> str:
@@ -286,7 +414,12 @@ class MessageProcessor:
                 return "done"
             await self._reply(ctx, order_svc.confirmation_text(order, self.biz))
             return "done"
-        if payload == POSTBACK_MODIFY:
+        if payload == POSTBACK_MODIFY or payload.startswith(POSTBACK_MODIFY + ":"):
+            sent = order_svc.submitted_order_for_modify(conn, cid, payload.removeprefix(POSTBACK_MODIFY).lstrip(":"))
+            if sent is not None:
+                # The summary was already confirmed: the cart is gone, so changes go to the team.
+                await self._reply(ctx, order_svc.modify_after_submit_text(sent))
+                return "done"
             conv = conv_svc.get_conversation(conn, cid)
             if conv["state"] != ConversationState.BUILDING_CART:
                 conv_svc.set_state(conn, cid, ConversationState.BUILDING_CART)
@@ -342,9 +475,10 @@ def housekeeping_once(conn: sqlite3.Connection, settings: Settings, biz: Busines
     asked = owner_commands.queue_pickup_checks(conn, settings, biz, now)
     reminded = owner_commands.queue_day_reminders(conn, settings, biz, now)
     checkins = owner_accounts.queue_checkins(conn, biz.timezone, now) if settings.owner_alert_channel != "sms" else []
-    if released or expired or asked or reminded or checkins:
-        log.info("housekeeping released=%d expired_orders=%s pickup_checks=%s day_reminders=%s owner_checkins=%s",
-                 released, expired, asked, reminded, checkins)
+    nudged = reminders.queue_contact_reminders(conn, settings, biz, now)
+    if released or expired or asked or reminded or checkins or nudged:
+        log.info("housekeeping released=%d expired_orders=%s pickup_checks=%s day_reminders=%s owner_checkins=%s "
+                 "contact_reminders=%s", released, expired, asked, reminded, checkins, nudged)
 
 
 async def _housekeeping(settings: Settings, processor: MessageProcessor) -> None:
@@ -380,6 +514,7 @@ def build_processor(settings: Settings) -> MessageProcessor:
 async def run_worker(settings: Settings) -> None:
     processor = build_processor(settings)
     log.info("worker started with concurrency=%d", settings.worker_concurrency)
+    search.warm(settings)  # loads the search model in the background; keyword search until then
     await asyncio.gather(
         _housekeeping(settings, processor),
         _notification_loop(settings, processor),

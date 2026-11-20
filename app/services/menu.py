@@ -1,6 +1,7 @@
 """Menu: SQL is the source of truth for items, prices and availability."""
 
 import json
+import re
 import sqlite3
 from pathlib import Path
 
@@ -19,10 +20,10 @@ def seed_menu(conn: sqlite3.Connection, path: Path) -> int:
         conn.execute("UPDATE menu_modifiers SET available = 0")
         for it in items:
             conn.execute(
-                """INSERT INTO menu_items (id, name, category, description, unit_label, price_cents, max_quantity, available, custom_rules, choices)
-                   VALUES (:id, :name, :category, :description, :unit_label, :price_cents, :max_quantity, :available, :custom_rules, :choices)
+                """INSERT INTO menu_items (id, name, category, description, search_terms, unit_label, price_cents, max_quantity, available, custom_rules, choices)
+                   VALUES (:id, :name, :category, :description, :search_terms, :unit_label, :price_cents, :max_quantity, :available, :custom_rules, :choices)
                    ON CONFLICT(id) DO UPDATE SET name=excluded.name, category=excluded.category,
-                     description=excluded.description, unit_label=excluded.unit_label,
+                     description=excluded.description, search_terms=excluded.search_terms, unit_label=excluded.unit_label,
                      price_cents=excluded.price_cents, max_quantity=excluded.max_quantity,
                      available=excluded.available, custom_rules=excluded.custom_rules, choices=excluded.choices, archived=0,
                      updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')""",
@@ -31,6 +32,7 @@ def seed_menu(conn: sqlite3.Connection, path: Path) -> int:
                     "name": it["name"],
                     "category": it["category"],
                     "description": it.get("description", ""),
+                    "search_terms": it.get("search_terms", ""),
                     "unit_label": it.get("unit_label", "each"),
                     "price_cents": int(it["price_cents"]),
                     "max_quantity": int(it.get("max_quantity", 100)),
@@ -65,20 +67,68 @@ _ITEMS = """SELECT mi.*, COALESCE(mc.name, mi.category) AS category_name
             WHERE mi.available = 1 AND mi.archived = 0"""
 
 
+_SEARCH_STOPWORDS = frozenset(
+    "a an the and or of for to in on at with without some something any anything one ones thing kind sort "
+    "i me my we you your do does have has got get can could would like want need please give show "
+    "is are was it its that this what which who how much many".split()
+)
+
+
+def query_terms(query: str) -> list[str]:
+    """The words worth matching: lowercased, no filler words, simple plurals trimmed
+    ("donuts" -> "donut", so it also matches "Donut")."""
+    words = re.findall(r"[a-z0-9\u00c0-\u024f']+", (query or "").lower())
+    out = []
+    for w in words:
+        w = w.strip("'")
+        if len(w) < 2 or w in _SEARCH_STOPWORDS:
+            continue
+        if len(w) > 3 and w.endswith("s") and not w.endswith("ss"):
+            w = w[:-1]
+        if w not in out:
+            out.append(w)
+    return out[:8]
+
+
+_SEARCH_FIELDS = ("name", "category", "category_name", "description", "search_terms")
+
+
+def _term_pattern(term: str) -> re.Pattern:
+    """Whole words, so "ice" doesn't find "Iced Coffee" or "Juice". A plural counts ("donut"
+    finds "Donuts"), and a longer word may be the start of one ("choco", "glaze")."""
+    t = re.escape(term)
+    return re.compile(rf"\b{t}(?:s|es)?\b" if len(term) < 5 else rf"\b{t}", re.I)
+
+
+def _matched(row: sqlite3.Row, patterns: list[re.Pattern]) -> tuple[int, int]:
+    """(how many of the words the item matches, how many of them are in its name)."""
+    keys = row.keys()
+    text = " ".join(str(row[f] or "") for f in _SEARCH_FIELDS if f in keys)
+    return sum(1 for p in patterns if p.search(text)), sum(1 for p in patterns if p.search(row["name"] or ""))
+
+
+def matches_all(row: sqlite3.Row, query: str) -> bool:
+    """Whether the item matches every word worth matching in the query."""
+    patterns = [_term_pattern(t) for t in query_terms(query)]
+    return bool(patterns) and _matched(row, patterns)[0] == len(patterns)
+
+
 def search_menu(conn: sqlite3.Connection, query: str, limit: int = 10) -> list[sqlite3.Row]:
-    """Keyword match over available items (name, category name, description). Items matching
-    more of the words come first."""
-    terms = [t for t in query.lower().split() if t][:8]
+    """Keyword match over available items (name, category, description, search words), whole
+    words only. Items matching more of the words come first, and a word in the name counts
+    double, so "chocolate donut" ranks Chocolate items first."""
+    terms = query_terms(query)
     if not terms:
         return conn.execute(f"{_ITEMS} ORDER BY mc.sort_order, mi.sort_order, mi.name LIMIT ?", (limit,)).fetchall()
-    match = "(lower(name) LIKE ? OR lower(category) LIKE ? OR lower(category_name) LIKE ? OR lower(description) LIKE ?)"
-    params = [f"%{t}%" for t in terms for _ in range(4)]
-    score = " + ".join(f"(CASE WHEN {match} THEN 1 ELSE 0 END)" for _ in terms)
-    where = " OR ".join([match] * len(terms))
-    return conn.execute(
-        f"SELECT * FROM ({_ITEMS}) WHERE {where} ORDER BY ({score}) DESC, name LIMIT ?",
-        (*params, *params, limit),
-    ).fetchall()
+    patterns = [_term_pattern(t) for t in terms]
+    # LIKE narrows the rows; the word patterns decide.
+    match = " OR ".join(f"lower(COALESCE({f}, '')) LIKE ?" for f in _SEARCH_FIELDS)
+    where = " OR ".join([f"({match})"] * len(terms))
+    rows = conn.execute(f"SELECT * FROM ({_ITEMS}) WHERE {where}",
+                        [f"%{t}%" for t in terms for _ in _SEARCH_FIELDS]).fetchall()
+    scored = [(hits + in_name, r) for r in rows for hits, in_name in [_matched(r, patterns)] if hits]
+    scored.sort(key=lambda x: (-x[0], x[1]["name"]))
+    return [r for _, r in scored[:limit]]
 
 
 def pool_items(conn: sqlite3.Connection, category: str, price_cents: int) -> list[sqlite3.Row]:

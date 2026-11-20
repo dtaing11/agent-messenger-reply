@@ -6,7 +6,9 @@ and is always flagged for the owner to review.
 """
 
 import json
+import re
 from dataclasses import dataclass, field
+from datetime import time
 
 
 @dataclass(frozen=True)
@@ -65,8 +67,33 @@ def normalize_details(rules: CustomRules, details: dict | None) -> dict:
     if len(clean["design"]) > rules.design_max_length:
         raise ValueError(f"Please keep the design description under {rules.design_max_length} characters.")
     if not clean["name"]:
-        del clean["name"]
+        # The surcharge mustn't depend on the assistant remembering to pass the name.
+        guessed = guess_name(clean["message"])
+        if guessed:
+            clean["name"] = guessed
+        else:
+            del clean["name"]
     return clean
+
+
+_GREETING = re.compile(
+    r"^\s*(?:happy\s+(?:birthday|bday|b-day|anniversary|graduation|retirement|mother'?s day|father'?s day|"
+    r"valentine'?s(?:\s+day)?)|congrats|congratulations|get well soon|welcome(?:\s+home|\s+back)?|"
+    r"(?:we|i)?\s*love you|miss you|good luck)\b[\s,!.]*(?:to\s+)?",
+    re.I,
+)
+
+
+def guess_name(message: str) -> str | None:
+    """The name in a greeting like "Happy Bday Christopher" (one or two words after it)."""
+    m = _GREETING.match(message or "")
+    if not m:
+        return None
+    rest = re.sub(r"[\s!.?,]+$", "", message[m.end():]).strip(" ,")
+    words = rest.split()
+    if 1 <= len(words) <= 2 and all(w.replace("'", "").replace("-", "").isalpha() for w in words):
+        return rest
+    return None
 
 
 def name_letters(name: str) -> int:
@@ -102,6 +129,29 @@ def canonical(details: dict) -> str:
 YES_NO = {"yes": "Yes", "y": "Yes", "true": "Yes", "with": "Yes", "with sprinkles": "Yes", "sprinkles": "Yes",
           "no": "No", "n": "No", "false": "No", "none": "No", "without": "No", "no sprinkles": "No", "plain": "No"}
 ANY_MIX = ("any", "assort", "surprise", "your choice", "store's choice", "stores choice", "mix them", "random")
+_STORE_WORDS = re.compile(
+    r"\b(?:any|anything|assort\w*|surprise|random\w*|whatever|store'?s|stores|chef'?s|dealer'?s|your|choice|choose|pick|"
+    r"mix|mixed|them|it|up|me|us|for|you|please|just|is|are|fine|good|ok|okay|all|the|a|of|kind|kinds|donuts?|"
+    r"doughnuts?|flavou?rs?|works|have|has|got|like|decide|best|sellers?|great)\b",
+    re.I,
+)
+
+
+def _mentions_store_choice(low: str) -> bool:
+    """Loose test for "they said something about a mix" (then the strict parser decides)."""
+    return bool(re.search(r"\b(?:any|assort\w*|surprise|random|your choice|store'?s choice|stores choice|mix them)\b", low))
+
+
+def says_store_choice(text: str) -> bool:
+    """True only when the text just asks the store to choose ("store's choice", "surprise me",
+    "any is fine") and names nothing else, so it can't carry extra items past the checks."""
+    low = " ".join(re.sub(r"[^\w']+", " ", text or "").split()).lower()
+    if not low or not re.search(r"\b(?:any|anything|assort\w*|surprise|random\w*|whatever|choice|choose|pick|mix)\b", low):
+        return False
+    return not _STORE_WORDS.sub(" ", low).strip()
+
+
+_CHOICE_FILLER = frozenset({"jelly", "filling", "filled", "with", "flavor", "flavour", "the", "a", "please"})
 
 
 @dataclass(frozen=True)
@@ -144,7 +194,17 @@ class Choice:
         if set(self.options) == {"Yes", "No"} and v in YES_NO:
             return YES_NO[v]
         hits = [o for o in self.options if v in o.lower()]
-        return hits[0] if len(hits) == 1 else None
+        if len(hits) == 1:
+            return hits[0]
+        # "powder sugar" -> Powdered Sugar, "strawberry jelly" -> Strawberry: every word the
+        # customer used starts a word of exactly one option (filler like "jelly" ignored).
+        words = [w for w in re.findall(r"[a-z']+", v) if w not in _CHOICE_FILLER]
+        if words:
+            hits = [o for o in self.options
+                    if all(any(ow.startswith(w) for ow in re.findall(r"[a-z']+", o.lower())) for w in words)]
+            if len(hits) == 1:
+                return hits[0]
+        return None
 
     def skipped_for(self, picked: dict) -> bool:
         return any(picked.get(k) in vals for k, vals in self.not_with)
@@ -206,10 +266,10 @@ def apply_choices(choices: list[Choice], item_name: str, details: dict) -> dict:
         if c.mix:
             text = " ".join(str(raw or "").split())
             low = text.lower()
-            if text and (any(o.lower() in low for o in c.options) or any(w in low for w in ANY_MIX)):
+            if text and (any(o.lower() in low for o in c.options) or _mentions_store_choice(low)):
                 if len(text) > 200:
                     raise ValueError("Please keep the mix short, like: 6 Chocolate Icing with sprinkles, 6 Glazed.")
-                picked[c.key] = text
+                picked[c.key] = check_mix(text, c, item_name)
             else:
                 missing.append(c.key)
                 questions.append(c.question(item_name))
@@ -235,9 +295,199 @@ def apply_choices(choices: list[Choice], item_name: str, details: dict) -> dict:
     return picked
 
 
-def notice_text(item_name: str, days: int) -> str:
-    """How to tell a customer about an item's advance notice (owner: never say "24 hours")."""
+# ---------------------------------------------------------------- free-text mixes
+#
+# The assistant writes a mix like "6 Chocolate Icing with sprinkles, 6 Glazed". Each part is a
+# count and a flavor; the counts must add up to the box size, and the menu's rules still apply
+# (sprinkles only on icing flavors; Big Donuts only from the $2.09 donuts). The stored text is
+# rewritten in that same plain form so the owners always read it the same way.
+
+NUMBER_WORDS = {w: i for i, w in enumerate(
+    "zero one two three four five six seven eight nine ten eleven twelve".split())}
+_SPLIT = re.compile(r"\s*(?:,|;|\+|&|\band\b|\bplus\b)\s*|\s+(?=half\b|\d{1,3}\s+[a-z])", re.I)
+_NO_SPRINKLES = re.compile(r"\b(?:no|without|w/o|minus|hold the)\s+sprinkles?\b", re.I)
+_SPRINKLES = re.compile(r"\b(?:with|w/|topped with)?\s*(?:rainbow\s+)?sprinkles?\b", re.I)
+_FILLER = re.compile(r"\b(?:donuts?|doughnuts?|of|the|with|flavou?rs?|each|please|pcs?|pieces?|all|are|is|as|in|ones?)\b",
+                     re.I)
+STORE_CHOICE = "store's choice"
+
+
+class MixError(ValueError):
+    pass
+
+
+@dataclass
+class _Part:
+    count: int | None
+    kind: str | None  # "n", "half", "rest" or None (no count given)
+    text: str
+    sprinkles: bool | None = None
+    name: str = ""
+
+
+def _clean(text: str) -> str:
+    return " ".join(re.sub(r"[()\[\]:.!?\-]", " ", text).split())
+
+
+def _split_count(text: str) -> _Part:
+    t = text.strip()
+    if m := re.match(r"^(\d{1,3})\s*(?:x\b)?\s*(.*)$", t):
+        return _Part(int(m[1]), "n", m[2])
+    if m := re.match(r"^(?:the\s+)?(?:rest|remaining|others?|other)\b\s*(.*)$", t, re.I):
+        return _Part(None, "rest", m[1])
+    if m := re.match(r"^half\b\s*(.*)$", t, re.I):
+        return _Part(None, "half", m[1])
+    if m := re.match(r"^(" + "|".join(NUMBER_WORDS) + r")\b\s*(.*)$", t, re.I):
+        return _Part(NUMBER_WORDS[m[1].lower()], "n", m[2])
+    if m := re.match(r"^(.*?)\s*(?:x\s*(\d{1,3})|\((\d{1,3})\))$", t, re.I):
+        return _Part(int(m[2] or m[3]), "n", m[1])
+    return _Part(None, None, t)
+
+
+def _match_name(text: str, names) -> str | None:
+    """The option named in `text` (longest name first, whole words), else the one option that
+    contains what's left once filler words are dropped."""
+    low = " ".join(_FILLER.sub(" ", _clean(text)).split()).lower()
+    if not low:
+        return None
+    for n in sorted(names, key=len, reverse=True):
+        if re.search(rf"\b{re.escape(n.lower())}(?:s|es)?\b", low):
+            return n
+    hits = [n for n in names if low in n.lower()]
+    return hits[0] if len(hits) == 1 else None
+
+
+def _parts(text: str) -> tuple[list[_Part], bool]:
+    """Split a mix into parts. Returns (parts, sprinkles_on_all)."""
+    text = re.sub(r"\bw/(?!o)\s*", "with ", text, flags=re.I)
+    parts, on_all = [], False
+    for raw in (r for r in _SPLIT.split(text) if r.strip()):
+        part = _split_count(raw)
+        if _NO_SPRINKLES.search(part.text):
+            part.sprinkles = False
+            part.text = _NO_SPRINKLES.sub(" ", part.text)
+        elif _SPRINKLES.search(part.text):
+            part.sprinkles = True
+            part.text = _SPRINKLES.sub(" ", part.text)
+        if part.count is None and part.kind is None and not _FILLER.sub(" ", _clean(part.text)).strip():
+            if part.sprinkles:  # "..., all with sprinkles"
+                on_all = True
+                continue
+        parts.append(part)
+    return parts, on_all
+
+
+def _resolve_counts(parts: list[_Part], total: int, example: str, what: str) -> None:
+    for p in parts:
+        if p.kind == "half":
+            if total % 2:
+                raise MixError(f"Half of {total} isn't a whole number. Give exact counts that add up to {total}, like: {example}.")
+            p.count = total // 2
+    open_parts = [p for p in parts if p.count is None]
+    if len(parts) == 1 and open_parts:
+        parts[0].count = total  # "Chocolate Icing" = all of them
+    elif len(open_parts) == 1:
+        left = total - sum(p.count for p in parts if p.count is not None)
+        if left <= 0:
+            raise MixError(f"Those counts already make {total - left}, but the box holds {total}. "
+                           f"Give exact counts that add up to {total}, like: {example}.")
+        open_parts[0].count = left
+    elif open_parts:
+        raise MixError(f"Give a count for each {what}, adding up to {total}, like: {example}.")
+    if any(p.count <= 0 for p in parts):
+        raise MixError(f"Each {what} needs a count of at least 1, like: {example}.")
+    got = sum(p.count for p in parts)
+    if got != total:
+        raise MixError(f"That mix has {got} donuts, but the box holds exactly {total}. "
+                       f"Give counts that add up to {total}, like: {example}.")
+
+
+def _join(parts: list[tuple[int, str]]) -> str:
+    merged: dict[str, int] = {}
+    for n, label in parts:
+        merged[label] = merged.get(label, 0) + n
+    return ", ".join(f"{n} {label}" for label, n in merged.items())
+
+
+def check_mix(text: str, c: Choice, item_name: str) -> str:
+    """Validate a free-text flavor mix for a Mix Donuts box and return it in plain form.
+    Raises MixError with what to fix."""
+    total = int(c.count or 0)
+    if says_store_choice(text):
+        return STORE_CHOICE  # stored as just that phrase, never the raw text
+    sprinkle_ok = c.raw.get("sprinkles_on") or [o for o in c.options if "icing" in o.lower()]
+    example = (f"{total // 2} {sprinkle_ok[0] if sprinkle_ok else c.options[0]} with sprinkles, "
+               f"{total - total // 2} {c.options[0]}") if sprinkle_ok else f"{total // 2} {c.options[0]}, {total - total // 2} {c.options[-1]}"
+    parts, on_all = _parts(text)
+    if not parts:
+        raise MixError(f"Write the mix as counts and flavors, like: {example}.")
+    for p in parts:
+        name = _match_name(p.text, c.options)
+        if name is None and says_store_choice(p.text):
+            name = STORE_CHOICE  # e.g. "6 glazed, the rest your choice"
+        if name is None:
+            raise MixError(f"\"{p.text.strip() or text}\" isn't one of the {item_name} flavors "
+                           f"({', '.join(c.options)}). Write the mix like: {example}.")
+        p.name = name
+        if on_all and p.sprinkles is None and name in sprinkle_ok:
+            p.sprinkles = True
+        if p.sprinkles and name != STORE_CHOICE and name not in sprinkle_ok:
+            raise MixError(f"Sprinkles only go on icing flavors ({', '.join(sprinkle_ok)}), never on {name}.")
+    if on_all and not any(p.sprinkles for p in parts):
+        raise MixError(f"Sprinkles only go on icing flavors ({', '.join(sprinkle_ok)}).")
+    if total:
+        _resolve_counts(parts, total, example, "flavor")
+    return _join([(p.count, p.name + (" with sprinkles" if p.sprinkles else "")) for p in parts])
+
+
+def check_pool_mix(text: str, c: Choice, items: list[tuple[str, list[str]]], other_names: list[str]) -> str:
+    """Validate a pick-any mix like "2 Twist (Chocolate), 2 Cinnamon Roll, 2 Pinecone".
+    `items` are the pool's (name, flavors); `other_names` the rest of the menu, to say clearly
+    when something isn't in the pool (e.g. a Special Design Donut in the Big Donuts box)."""
+    total = int(c.count or 0)
+    names = [n for n, _ in items]
+    flavors = dict(items)
+    if says_store_choice(text):
+        return STORE_CHOICE
+    first = items[0]
+    example = ", ".join(f"{total // len(items[:3]) if i < len(items[:3]) - 1 else total - (total // len(items[:3])) * (len(items[:3]) - 1)} "
+                        f"{n}" + (f" ({fl[0]})" if fl else "") for i, (n, fl) in enumerate(items[:3])) if first else ""
+    parts, on_all = _parts(text)
+    if on_all or any(p.sprinkles for p in parts):
+        raise MixError(f"{c.label} don't come with sprinkles. Pick from: {', '.join(names)}.")
+    if not parts:
+        raise MixError(f"Write the {c.label} as counts and donuts, like: {example}.")
+    out = []
+    for p in parts:
+        name = _match_name(p.text, names)
+        if name is None:
+            if says_store_choice(p.text):
+                p.name = STORE_CHOICE
+                continue
+            other = _match_name(p.text, other_names)
+            if other:
+                raise MixError(f"{other} isn't one of the {c.label} (only these can go in: {', '.join(names)}).")
+            raise MixError(f"\"{p.text.strip()}\" isn't one of the {c.label} ({', '.join(names)}). Write it like: {example}.")
+        p.name = name
+        if flavors.get(name):
+            rest = re.sub(rf"\b{re.escape(name)}(?:s|es)?\b", " ", _clean(p.text), flags=re.I)
+            fl = _match_name(rest, flavors[name])
+            if fl is None:
+                raise MixError(f"Which {name} flavor: {', '.join(flavors[name])}? Write it like: {total} {name} ({flavors[name][0]}).")
+            p.name = f"{name} ({fl})"
+    if total:
+        _resolve_counts(parts, total, example, "donut")
+    out = [(p.count, p.name) for p in parts]
+    return _join(out)
+
+
+def notice_text(item_name: str, days: int, cutoff_hour: int = 3) -> str:
+    """How to tell a customer about an item's advance notice (owner: never say "24 hours";
+    the order, with the pickup name and phone number, must be confirmed by 3 AM on the pickup day)."""
+    cutoff = time(cutoff_hour).strftime("%-I %p")
     if days <= 1:
-        return (f"{item_name} orders need to be placed by the day before pickup. It doesn't have to be a full "
-                "24 hours ahead: ordering today for pickup tomorrow morning is fine, but not for today.")
-    return f"{item_name} orders need to be placed at least {days} days before the pickup day."
+        return (f"{item_name} orders need to be placed by the day before pickup, and confirmed with the pickup name "
+                f"and phone number by {cutoff} on the pickup day, when our team starts baking. It doesn't have to be "
+                "a full 24 hours ahead: ordering today for pickup tomorrow morning is fine, but not for today.")
+    return (f"{item_name} orders need to be placed at least {days} days before the pickup day, and confirmed with "
+            f"the pickup name and phone number by {cutoff}, {days - 1} day{'s' if days > 2 else ''} before it.")

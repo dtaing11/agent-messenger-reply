@@ -84,7 +84,10 @@ async def receive_webhook(request: Request, settings: Settings = Depends(get_run
                 continue
             event_type, ext_id = kind
             # For echoes the customer is the recipient; otherwise the sender.
-            psid = (event.get("recipient") if event_type == "echo" else event.get("sender", {})).get("id")
+            psid = ((event.get("recipient") if event_type == "echo" else event.get("sender")) or {}).get("id")
+            if not psid:
+                log.warning("skipping %s event with no customer id", event_type)
+                continue
             payload = {"page_id": page_id, "psid": psid, "event": event}
             if queue.enqueue(conn, "messenger", f"{page_id}:{ext_id}", event_type, payload, customer_key=f"{page_id}:{psid}"):
                 accepted += 1

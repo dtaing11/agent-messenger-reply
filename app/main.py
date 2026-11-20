@@ -14,7 +14,6 @@ from app.database.bootstrap import prepare
 from app.deps import get_db
 from app.settings.secret_store import SecretStore
 from app.webhooks import messenger, sms
-from app.workers import queue
 
 log = logging.getLogger(__name__)
 
@@ -39,7 +38,7 @@ def create_app() -> FastAPI:
     @app.get("/health")
     def health(conn=Depends(get_db)):
         conn.execute("SELECT 1")
-        return {"status": "ok", "queue": queue.stats(conn)}
+        return {"status": "ok"}  # public: nothing about the queue or orders (that's in the portal)
 
     return app
 

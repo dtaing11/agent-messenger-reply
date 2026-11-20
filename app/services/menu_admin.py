@@ -103,7 +103,8 @@ def export_menu(conn: sqlite3.Connection) -> dict:
         for entry in group["items"]:
             it = entry["row"]
             item = {"id": it["id"], "name": it["name"], "category": it["category"], "unit_label": it["unit_label"],
-                    "price_cents": it["price_cents"], "max_quantity": it["max_quantity"], "description": it["description"]}
+                    "price_cents": it["price_cents"], "max_quantity": it["max_quantity"], "description": it["description"],
+                    "search_terms": it["search_terms"]}
             if not it["available"]:
                 item["available"] = False
             if it["custom_rules"]:
@@ -205,7 +206,8 @@ def update_item(conn: sqlite3.Connection, item_id: str, form: dict) -> sqlite3.R
     if not 1 <= max_q <= 1000:
         raise MenuError("Max per order must be between 1 and 1000.")
     unit = str(form.get("unit_label", cur["unit_label"])).strip()[:30] or "each"
-    desc = str(form.get("description", cur["description"])).strip()[:300]
+    desc = " ".join(str(form.get("description", cur["description"])).split())[:300]
+    terms = " ".join(str(form.get("search_terms", cur["search_terms"])).split())[:300]
     available = 1 if form.get("available") in ("on", "1", "true", True) else 0
     dup = conn.execute("SELECT 1 FROM menu_items WHERE lower(name) = lower(?) AND id != ? AND archived = 0",
                        (name, item_id)).fetchone()
@@ -236,8 +238,9 @@ def update_item(conn: sqlite3.Connection, item_id: str, form: dict) -> sqlite3.R
     with transaction(conn):
         conn.execute(
             """UPDATE menu_items SET name = ?, category = ?, price_cents = ?, max_quantity = ?, unit_label = ?,
-                 description = ?, available = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?""",
-            (name, category, cents, max_q, unit, desc, available, item_id),
+                 description = ?, search_terms = ?, available = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+               WHERE id = ?""",
+            (name, category, cents, max_q, unit, desc, terms, available, item_id),
         )
         if choices is not None:
             conn.execute("UPDATE menu_items SET choices = ? WHERE id = ?", (choices or None, item_id))

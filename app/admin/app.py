@@ -19,7 +19,7 @@ from zoneinfo import ZoneInfo
 
 import httpx
 from fastapi import Depends, FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
@@ -33,7 +33,7 @@ from app.integrations import checks
 from app.agent.state_machine import OrderStatus
 from app.integrations import twilio
 from app.services import conversation as conv_svc
-from app.services import customers, menu_admin, owner_accounts, owner_commands
+from app.services import customers, menu_admin, notify, owner_accounts, owner_commands, photos
 from app.services.business import load_business
 from app.services.phone import display as phone_display
 from app.services.pricing import money
@@ -583,16 +583,13 @@ def create_admin_app() -> FastAPI:
         if c is None:
             return RedirectResponse("/admin/customers", status_code=303)
         conv = conn.execute("SELECT * FROM conversations WHERE customer_id = ?", (customer_id,)).fetchone()
-        orders = conn.execute(
-            "SELECT * FROM orders WHERE customer_id = ? OR (customer_phone IS NOT NULL AND customer_phone = ?) ORDER BY id DESC",
-            (customer_id, c["phone"]),
-        ).fetchall()
+        orders = conn.execute("SELECT * FROM orders WHERE customer_id = ? ORDER BY id DESC", (customer_id,)).fetchall()
         msgs = conn.execute(
             "SELECT role, content, created_at FROM messages WHERE conversation_id = ? ORDER BY id DESC LIMIT 40",
             (conv["id"],),
         ).fetchall() if conv else []
         return page(request, "customer.html", user, c=c, conv=conv, orders=orders, msgs=list(reversed(msgs)),
-                    history=customers.pickup_history(conn, customer_id, c["phone"]))
+                    history=customers.pickup_history(conn, customer_id), photos=photos.for_customer(conn, customer_id))
 
     @app.post("/admin/customers/{customer_id}/bot")
     async def customer_bot(customer_id: int, request: Request, conn=Depends(get_db), user=Depends(admin_user)):
@@ -608,7 +605,7 @@ def create_admin_app() -> FastAPI:
     @app.get("/admin/owners")
     def owners_page(request: Request, conn=Depends(get_db), user=Depends(current_user), s=Depends(runtime_settings)):
         now = utcnow()
-        accounts = [{**dict(a), "open": owner_accounts.window_open(a, now),
+        accounts = [{**dict(a), "open": owner_accounts.window_open(a, now), "pending": a["approved_at"] is None,
                      "closes": to_db(owner_accounts.window_closes_at(a)) if a["last_message_at"] else None}
                     for a in owner_accounts.all_accounts(conn)]
         recent = conn.execute("SELECT * FROM notifications ORDER BY id DESC LIMIT 25").fetchall()
@@ -617,8 +614,15 @@ def create_admin_app() -> FastAPI:
                ORDER BY id DESC""", (to_db(now - timedelta(hours=24)),)).fetchall()
         return page(request, "owners.html", user, s=s, accounts=accounts, recent=recent, sms_failures=sms_failures,
                     labels={a["psid"]: a["label"] for a in accounts},
-                    reachable=s.owner_alert_channel == "sms" or any(a["open"] and a["active"] for a in accounts),
-                    twilio_ready=twilio.configured(s), saved=request.query_params.get("saved"))
+                    reachable=s.owner_alert_channel == "sms" or any(a["open"] and a["active"] and not a["pending"] for a in accounts),
+                    twilio_ready=twilio.configured(s), saved=request.query_params.get("saved"),
+                    lockout=owner_accounts.lockout_status(conn, now))
+
+    @app.post("/admin/owners/link-lockout/clear")
+    async def owners_clear_lockout(request: Request, conn=Depends(get_db), user=Depends(admin_user)):
+        n = owner_accounts.clear_lockout(conn)
+        auth.audit(conn, user.username, "owner.link_lockout.clear", str(n), "ok")
+        return _back_to_owners(request, "Cleared. Anyone who was locked out can send a new link code now.")
 
     def _back_to_owners(request: Request, saved: str):
         target = "/admin/owners?" + urlencode({"saved": saved})
@@ -645,7 +649,26 @@ def create_admin_app() -> FastAPI:
             return result(request, False, str(exc))
         auth.audit(conn, user.username, "owner.link_code", label.strip()[:40], "ok")  # never the code itself
         return result(request, True, f"From {label.strip()}'s own Facebook account, send the Page this message within "
-                                     f"15 minutes:  LINK {code}")
+                                     f"15 minutes:  LINK {code}   Then approve the account below (reload this page).")
+
+    @app.post("/admin/owners/{account_id}/approve")
+    async def owners_approve(account_id: int, request: Request, conn=Depends(get_db), user=Depends(admin_user),
+                             s=Depends(runtime_settings)):
+        now = utcnow()
+        acc = owner_accounts.approve(conn, account_id, now)
+        if acc is None:
+            return result(request, False, "There's nothing waiting for approval there.")
+        conn.execute(
+            """INSERT OR IGNORE INTO notifications (type, recipient, body, idempotency_key, channel)
+               VALUES ('owner_welcome', ?, ?, ?, 'messenger')""",
+            (acc["psid"], owner_accounts.WELCOME.format(label=acc["label"]), f"owner_welcome:{acc['id']}:{acc['approved_at']}"),
+        )
+        notify.alert_owners(conn, s, "owner_linked",
+                            f"FYI: {acc['label']} (Messenger …{acc['psid'][-4:]}) was approved by {user.username} and can now "
+                            "get order alerts and reply to orders.",
+                            f"owner_linked:{acc['id']}:{acc['approved_at']}", exclude=acc["psid"], now=now, every_channel=True)
+        auth.audit(conn, user.username, "owner.approve", str(account_id), "ok")
+        return _back_to_owners(request, f"Approved. {acc['label']} will get a welcome message on Messenger.")
 
     @app.post("/admin/owners/{account_id}/remove")
     async def owners_remove(account_id: int, request: Request, conn=Depends(get_db), user=Depends(admin_user)):
@@ -655,9 +678,10 @@ def create_admin_app() -> FastAPI:
 
     @app.post("/admin/owners/{account_id}/test")
     async def owners_test(account_id: int, request: Request, conn=Depends(get_db), user=Depends(admin_user)):
-        acc = conn.execute("SELECT * FROM owner_accounts WHERE id = ? AND active = 1", (account_id,)).fetchone()
+        acc = conn.execute("SELECT * FROM owner_accounts WHERE id = ? AND active = 1 AND approved_at IS NOT NULL",
+                           (account_id,)).fetchone()
         if acc is None:
-            return result(request, False, "That owner isn't linked.")
+            return result(request, False, "That owner isn't linked and approved.")
         if not owner_accounts.window_open(acc, utcnow()):
             return result(request, False, f"{acc['label']} hasn't messaged the Page in 24 hours, so Facebook won't let the Page "
                                           "message them. Ask them to send the Page any message, then try again.")
@@ -702,10 +726,27 @@ def create_admin_app() -> FastAPI:
             """SELECT o.id, o.customer_id, o.customer_name, o.customer_phone, o.pickup_time, o.total_cents, o.subtotal_cents,
                       o.status, o.needs_review, o.created_at, o.pickup_check_sent_at,
                       (SELECT COUNT(*) FROM orders p WHERE p.id != o.id AND p.status = 'NO_SHOW'
-                         AND (p.customer_id = o.customer_id OR (o.customer_phone IS NOT NULL AND p.customer_phone = o.customer_phone))) AS no_shows
+                         AND p.customer_id = o.customer_id) AS no_shows
                FROM orders o ORDER BY o.id DESC LIMIT 100"""
         ).fetchall()
-        return page(request, "orders.html", user, orders=rows, now_db=to_db(utcnow()))
+        shots: dict[int, list[int]] = {}
+        if rows:
+            marks = ",".join("?" * len(rows))
+            for r in conn.execute(f"SELECT id, order_id FROM customer_photos WHERE path IS NOT NULL AND order_id IN ({marks}) "
+                                  "ORDER BY id", [r["id"] for r in rows]):
+                shots.setdefault(r["order_id"], []).append(r["id"])
+        return page(request, "orders.html", user, orders=rows, now_db=to_db(utcnow()), photos=shots)
+
+    @app.get("/admin/photos/{photo_id}")
+    def photo_file(photo_id: int, conn=Depends(get_db), user=Depends(current_user), s=Depends(runtime_settings)):
+        """A customer's photo, for signed-in portal users only."""
+        row = conn.execute("SELECT path, mime FROM customer_photos WHERE id = ? AND path IS NOT NULL", (photo_id,)).fetchone()
+        f = photos.file_for(s, row["path"]) if row else None
+        if f is None:
+            return Response(status_code=404)
+        return FileResponse(f, media_type=row["mime"], headers={
+            "X-Content-Type-Options": "nosniff", "Cache-Control": "private, max-age=3600",
+            "Content-Security-Policy": "default-src 'none'", "Content-Disposition": "inline"})
 
     @app.get("/admin/audit")
     def audit_log(request: Request, conn=Depends(get_db), user=Depends(current_user)):

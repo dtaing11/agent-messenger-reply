@@ -3,6 +3,7 @@ always the one from the event (never an LLM argument). The LLM cannot submit an 
 that only happens when the customer taps Confirm on the summary (handled in the worker)."""
 
 import json
+import logging
 import sqlite3
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -14,20 +15,23 @@ from app.services import cart as cart_svc
 from app.services import (
     custom_items,
     customers,
-    knowledge,
+    discounts,
     menu,
     notify,
     phone,
+    search,
     sessions,
 )
 from app.services import order as order_svc
 from app.services.business import BusinessInfo, PickupValidation, validate_pickup_time
 from app.services.pricing import money
-from app.timeutil import from_db, local
+from app.timeutil import from_db, local, to_db
+
+log = logging.getLogger(__name__)
 
 TOOLS: list[dict] = [
     {"type": "function", "function": {
-        "name": "search_menu", "description": "Find menu items by name or keyword. Returns item ids, prices (before tax) and add-on modifiers.",
+        "name": "search_menu", "description": "Find menu items by name, nickname or what the customer describes (\"something chocolatey\", \"the long one with cream\"). Returns item ids, descriptions, prices (before tax) and add-on modifiers.",
         "parameters": {"type": "object", "properties": {"query": {"type": "string", "maxLength": 100}}, "required": ["query"]}}},
     {"type": "function", "function": {
         "name": "browse_menu", "description": "A short overview for menu questions: with no category, the menu's categories and price ranges; with a category (e.g. \"Bubble Tea\"), its items, each with its own price, and same_price. Use search_menu for an item's flavors and add-ons.",
@@ -100,6 +104,37 @@ TOOLS: list[dict] = [
 ]
 
 
+TOPPING_CATEGORY = "bubble_tea"
+
+
+def _topping_offer(conn, item_id: str) -> str | None:
+    """Owner: no drink comes with a topping, but offer them once, leading with tapioca pearls."""
+    item = menu.get_item(conn, item_id)
+    if item is None or item["category"] != TOPPING_CATEGORY:
+        return None
+    mods = menu.get_modifiers(conn, item_id)
+    lead = next((m for m in mods if "tapioca" in m["name"].lower()), mods[0] if mods else None)
+    if lead is None:
+        return None
+    return (f"No toppings were added. Offer toppings once for this order, leading with {lead['name']} "
+            f"(+{money(lead['price_delta_cents'])}, modifier_id {lead['id']}), which goes with almost every drink. "
+            "Add one only if the customer says yes; if they say no, don't offer again.")
+
+
+# The owners' rule: the bot never gives discounts, so nothing it writes for the team or the
+# customer may suggest one (see services.discounts).
+NO_DISCOUNT_TEXT = ("That text mentions a discount or a free item. Sprinkle never gives discounts, so it can't go "
+                    "on the order. Prices are as listed on the menu.")
+
+# How each order status reads to the customer. A missed pickup is an owner-only record:
+# the assistant only ever sees "closed", the same as a picked-up order.
+CUSTOMER_STATUS = {
+    "PENDING_ACCEPTANCE": "waiting for the team to accept", "ACCEPTED": "accepted", "PREPARING": "being prepared",
+    "READY": "ready for pickup", "REJECTED": "not accepted", "CANCELLED": "cancelled",
+    "EXPIRED": "not accepted in time", "COMPLETED": "closed", "NO_SHOW": "closed",
+}
+
+
 @dataclass
 class ToolContext:
     conn: sqlite3.Connection
@@ -111,6 +146,21 @@ class ToolContext:
     handoff_reason: str | None = None  # set by request_human_support
     quick_replies: tuple[str, ...] = ()  # set by offer_choices
     log: list[str] = field(default_factory=list)
+
+
+def _whole(value, what: str = "quantity", low: int = 0, high: int = 10**9) -> int:
+    """A whole number from tool arguments: 1.9 or "lots" is refused instead of silently becoming 1."""
+    if isinstance(value, bool):
+        raise ValueError(f"The {what} must be a whole number.")
+    if isinstance(value, float):
+        if not value.is_integer():
+            raise ValueError(f"The {what} must be a whole number. Ask the customer how many.")
+        value = int(value)
+    if isinstance(value, str) and value.strip().lstrip("-").isdigit():
+        value = int(value.strip())
+    if not isinstance(value, int) or not (low <= value <= high):
+        raise ValueError(f"The {what} must be a whole number from {low} to {high}.")
+    return value
 
 
 def _parse_local(ctx: ToolContext, value: str) -> datetime:
@@ -129,8 +179,8 @@ def _fmt_local(dt: datetime, tz: str) -> str:
 def _validate_for_cart(ctx: ToolContext, when: datetime, view: cart_svc.CartView | None = None) -> PickupValidation:
     """Pickup check that includes the notice the cart's items need (Special Design Donut: day before)."""
     view = view or cart_svc.view_cart(ctx.conn, ctx.customer_id, ctx.settings.tax_rate_bps)
-    days, notice = view.advance_notice()
-    return validate_pickup_time(ctx.biz, when, ctx.now, days, notice)
+    days, notice = view.advance_notice(ctx.biz.pickup.notice_cutoff_hour)
+    return validate_pickup_time(ctx.biz, when, ctx.now, days, notice, ordered_at=view.notice_ordered_at(ctx.now))
 
 
 def _suggestions(ctx: ToolContext, pv: PickupValidation) -> list[str]:
@@ -164,10 +214,12 @@ def _cart_json(ctx: ToolContext, view: cart_svc.CartView | None = None) -> dict:
     return out
 
 
-def _item_json(conn: sqlite3.Connection, it: sqlite3.Row) -> dict:
+def _item_json(conn: sqlite3.Connection, it: sqlite3.Row, cutoff_hour: int = 3) -> dict:
     category = it["category_name"] if "category_name" in it.keys() else it["category"].replace("_", " ")
     out = {"item_id": it["id"], "name": it["name"], "category": category,
            "unit": it["unit_label"], "price_before_tax": money(it["price_cents"]), "max_quantity": it["max_quantity"]}
+    if (desc := (it["description"] or "").strip()):
+        out["description"] = desc
     mods = menu.get_modifiers(conn, it["id"])
     if mods:
         out["add_ons"] = [{"modifier_id": m["id"], "name": m["name"], "price": money(m["price_delta_cents"])} for m in mods]
@@ -195,7 +247,7 @@ def _item_json(conn: sqlite3.Connection, it: sqlite3.Row) -> dict:
         out["requires_details"] = {"message": rules.questions.get("message") or custom_items.DEFAULT_QUESTIONS["message"],
                                    "design": rules.questions.get("design") or custom_items.DEFAULT_QUESTIONS["design"]}
         if rules.min_days_ahead:
-            out["order_ahead"] = custom_items.notice_text(it["name"], rules.min_days_ahead)
+            out["order_ahead"] = custom_items.notice_text(it["name"], rules.min_days_ahead, cutoff_hour)
         if rules.name_free_letters is not None:
             out["long_name_rule"] = f"Names longer than {rules.name_free_letters} letters have an extra charge the store confirms."
     if it["description"]:
@@ -214,19 +266,23 @@ async def execute(ctx: ToolContext, name: str, raw_args: str | dict) -> dict:
         if isinstance(exc, cart_svc.DetailsNeeded):
             return {"error": "details_needed", "ask_customer": exc.questions}
         return {"error": str(exc)[:300]}
+    except Exception as exc:  # noqa: BLE001 - a tool bug must never crash the whole reply (a retry would redo tools)
+        log.exception("tool %s failed", name)
+        return {"error": f"That didn't work ({type(exc).__name__}). Try something else or ask the customer."}
 
 
 def _dispatch(ctx: ToolContext, name: str, a: dict) -> dict:
     conn, cid = ctx.conn, ctx.customer_id
     if name == "search_menu":
-        rows = menu.search_menu(conn, str(a["query"])[:100], limit=8)
-        if not rows:  # try each word separately before giving up
-            seen = {}
-            for w in str(a["query"]).split():
-                for r in menu.search_menu(conn, w, limit=5):
-                    seen.setdefault(r["id"], r)
-            rows = list(seen.values())[:8]
-        return {"items": [_item_json(conn, r) for r in rows]} if rows else {"items": [], "note": "No matching items on the menu."}
+        rows, exact = search.find_menu_items(conn, str(a["query"])[:100], limit=8,
+                                             min_score=ctx.settings.semantic_min_score)
+        if not rows:
+            return {"items": [], "note": "No matching items on the menu."}
+        out = {"items": [_item_json(conn, r, ctx.biz.pickup.notice_cutoff_hour) for r in rows]}
+        if not exact:
+            out["note"] = ("No item matched all of those words; these are only the closest items. Offer the ones that fit, "
+                           "or ask what they mean. Don't say we have something these items don't show.")
+        return out
     if name == "browse_menu":
         return menu.browse(conn, str(a.get("category") or "")[:60] or None)
     if name == "offer_choices":
@@ -240,10 +296,12 @@ def _dispatch(ctx: ToolContext, name: str, a: dict) -> dict:
         if long := [o for o in opts if len(o) > messenger.QUICK_REPLY_TITLE_MAX]:
             raise ValueError(f"Each option must be {messenger.QUICK_REPLY_TITLE_MAX} characters or fewer, or Messenger cuts it off. "
                              f"Too long: {', '.join(repr(o) for o in long)}. Shorten them and call offer_choices again.")
+        if discounts.any_discount(opts):
+            raise ValueError("Buttons can't offer discounts, deals or free items. Sprinkle never gives discounts.")
         ctx.quick_replies = tuple(opts[:13])
         return {"ok": True, "note": "Buttons will appear under your reply. Still ask the question in your reply."}
     if name == "search_knowledge":
-        docs = knowledge.search(conn, str(a["query"])[:200])
+        docs = search.find_knowledge(conn, str(a["query"])[:200], min_score=ctx.settings.semantic_min_score)
         return {"documents": docs} if docs else {"documents": [], "note": "No approved information found. Don't guess; offer to connect them with the team."}
     if name == "get_business_info":
         b = ctx.biz
@@ -252,22 +310,35 @@ def _dispatch(ctx: ToolContext, name: str, a: dict) -> dict:
                 "pickup_note": "Messenger orders are picked up only at this store. Other Town Donut stores can't fill them.",
                 "phone": b.raw.get("phone"), "payment": b.raw.get("payment"), "price_note": b.raw.get("price_note"),
                 "hours": {d: (f"{h[0]:%-I:%M %p}-{h[1]:%-I:%M %p}" if h else "closed") for d, h in b.hours.items()},
-                "pickup_rules": {"min_notice_minutes": b.pickup.min_lead_minutes, "max_days_ahead": b.pickup.max_days_ahead}}
+                "last_pickup_time": b.last_pickup_text(),
+                "pickup_rules": {"min_notice_minutes": b.pickup.min_lead_minutes, "max_days_ahead": b.pickup.max_days_ahead,
+                                 "last_pickup": f"{b.pickup.last_pickup_before_close_minutes} minutes before closing"}}
     if name == "get_cart":
         return _cart_json(ctx)
+    if name in ("add_to_cart", "update_cart_item") and discounts.any_discount(a.get("details") or {}):
+        return {"error": NO_DISCOUNT_TEXT}
     if name == "add_to_cart":
-        view = cart_svc.add_item(conn, cid, str(a["item_id"]), int(a["quantity"]), a.get("modifier_ids") or None, a.get("details") or None)
-        return {"ok": True, "cart": _cart_json(ctx, view)}
+        view = cart_svc.add_item(conn, cid, str(a["item_id"]), _whole(a["quantity"], low=1, high=100), a.get("modifier_ids") or None,
+                                 a.get("details") or None, now=ctx.now)
+        out = {"ok": True, "cart": _cart_json(ctx, view)}
+        if not a.get("modifier_ids") and (tip := _topping_offer(conn, str(a["item_id"]))):
+            # Once per order: only the first bubble tea brings the reminder.
+            if conn.execute("UPDATE carts SET topping_offered_at = ? WHERE id = ? AND topping_offered_at IS NULL",
+                            (to_db(ctx.now), view.cart_id)).rowcount:
+                out["next_step"] = tip
+        return out
     if name == "update_cart_item":
-        view = cart_svc.update_item(conn, cid, int(a["line_id"]), int(a["quantity"]), a.get("modifier_ids"), a.get("details"))
+        view = cart_svc.update_item(conn, cid, _whole(a["line_id"], "line_id"), _whole(a["quantity"], high=100), a.get("modifier_ids"), a.get("details"))
         return {"ok": True, "cart": _cart_json(ctx, view)}
     if name == "remove_from_cart":
-        return {"ok": True, "cart": _cart_json(ctx, cart_svc.remove_item(conn, cid, int(a["line_id"])))}
+        return {"ok": True, "cart": _cart_json(ctx, cart_svc.remove_item(conn, cid, _whole(a["line_id"], "line_id")))}
     if name == "check_pickup_time":
         pv = _validate_for_cart(ctx, _parse_local(ctx, str(a["pickup_time"])))
         return {"ok": pv.ok, "pickup_time": _fmt_local(pv.pickup_local, ctx.biz.timezone), "reason": pv.reason,
                 "suggestions": _suggestions(ctx, pv) or None}
     if name == "set_pickup_details":
+        if discounts.any_discount([a.get("notes"), a.get("customer_name")]):
+            return {"ok": False, "reason": NO_DISCOUNT_TEXT}
         when = None
         if a.get("pickup_time"):
             when = _parse_local(ctx, str(a["pickup_time"]))
@@ -285,11 +356,11 @@ def _dispatch(ctx: ToolContext, name: str, a: dict) -> dict:
         rows = conn.execute(
             "SELECT id, status, pickup_time, subtotal_cents FROM orders WHERE customer_id = ? ORDER BY id DESC LIMIT 5", (cid,)
         ).fetchall()
-        return {"orders": [{"order_id": r["id"], "status": r["status"].replace("_", " ").lower(),
+        return {"orders": [{"order_id": r["id"], "status": CUSTOMER_STATUS.get(r["status"], r["status"].replace("_", " ").lower()),
                             "pickup_time": _fmt_local(from_db(r["pickup_time"]), ctx.biz.timezone),
                             "subtotal_before_tax": money(r["subtotal_cents"])} for r in rows]}
     if name == "cancel_my_order":
-        o = order_svc.cancel_by_customer(conn, cid, int(a["order_id"]), ctx.settings)
+        o = order_svc.cancel_by_customer(conn, cid, _whole(a["order_id"], "order_id"), ctx.settings)
         notify.alert_owners(ctx.conn, ctx.settings, "order_cancelled",
                             f"Order #{o['id']} ({o['customer_name']}) was CANCELLED by the customer on Messenger.",
                             f"order:{o['id']}:cancelled", order_id=o["id"])
