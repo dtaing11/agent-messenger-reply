@@ -6,6 +6,8 @@ from app.config import Settings
 
 POSTBACK_CONFIRM = "CONFIRM_ORDER:"
 POSTBACK_MODIFY = "MODIFY_ORDER"
+PICK = "PICK:"  # quick-reply option chosen by tapping; the worker treats it as the customer's text
+QUICK_REPLY_TITLE_MAX = 20  # Messenger's limit for a quick-reply button title
 
 
 MAX_TEXT = 2000  # Messenger's limit per message
@@ -73,6 +75,18 @@ class MessengerClient:
             result = await self._send(payload)
         return result
 
+    async def send_choices(self, psid: str, text: str, options: list[str] | tuple[str, ...]) -> dict:
+        """Reply text with tap-to-answer buttons (up to 13). The button shows a short title; the
+        payload carries the full option, which the worker reads as if the customer typed it."""
+        *head, last = split_message(text)
+        for part in head:
+            await self._send({"recipient": {"id": psid}, "messaging_type": "RESPONSE", "message": {"text": part}})
+        return await self._send({
+            "recipient": {"id": psid},
+            "messaging_type": "RESPONSE",
+            "message": {"text": last, "quick_replies": quick_replies(options)},
+        })
+
     async def send_update(self, psid: str, text: str) -> dict:
         """A message the customer didn't just ask for (order accepted/ready). Allowed within
         24 hours of their last message."""
@@ -95,3 +109,11 @@ class MessengerClient:
                 ],
             },
         })
+
+
+def quick_replies(options: list[str] | tuple[str, ...]) -> list[dict]:
+    out = []
+    for o in list(options)[:13]:
+        title = o if len(o) <= QUICK_REPLY_TITLE_MAX else o[: QUICK_REPLY_TITLE_MAX - 1].rstrip() + "…"
+        out.append({"content_type": "text", "title": title, "payload": PICK + o[:900]})
+    return out

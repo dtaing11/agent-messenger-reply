@@ -10,9 +10,17 @@ from zoneinfo import ZoneInfo
 
 from app.config import Settings
 from app.services import cart as cart_svc
-from app.services import custom_items, customers, knowledge, menu, notify, phone
+from app.services import (
+    custom_items,
+    customers,
+    knowledge,
+    menu,
+    notify,
+    phone,
+    sessions,
+)
 from app.services import order as order_svc
-from app.services.business import BusinessInfo, validate_pickup_time
+from app.services.business import BusinessInfo, PickupValidation, validate_pickup_time
 from app.services.pricing import money
 from app.timeutil import from_db, local
 
@@ -20,6 +28,14 @@ TOOLS: list[dict] = [
     {"type": "function", "function": {
         "name": "search_menu", "description": "Find menu items by name or keyword. Returns item ids, prices (before tax) and add-on modifiers.",
         "parameters": {"type": "object", "properties": {"query": {"type": "string", "maxLength": 100}}, "required": ["query"]}}},
+    {"type": "function", "function": {
+        "name": "browse_menu", "description": "A short overview for menu questions: with no category, the menu's categories and price ranges; with a category (e.g. \"Bubble Tea\"), its items, each with its own price, and same_price. Use search_menu for an item's flavors and add-ons.",
+        "parameters": {"type": "object", "properties": {"category": {"type": "string", "maxLength": 60}}}}},
+    {"type": "function", "function": {
+        "name": "offer_choices", "description": "Show tap-to-answer buttons under your reply when you ask the customer to pick from a short list (kinds, flavors, yes/no). Up to 13 short options. Write the question in your reply as usual.",
+        "parameters": {"type": "object", "properties": {
+            "options": {"type": "array", "items": {"type": "string", "maxLength": 60}, "minItems": 2, "maxItems": 13}},
+            "required": ["options"]}}},
     {"type": "function", "function": {
         "name": "search_knowledge", "description": "Look up approved store information: hours, holidays, location, phone, payment, policies, special orders.",
         "parameters": {"type": "object", "properties": {"query": {"type": "string", "maxLength": 200}}, "required": ["query"]}}},
@@ -72,6 +88,12 @@ TOOLS: list[dict] = [
         "name": "cancel_my_order", "description": "Cancel one of this customer's orders if it's still allowed. Only when the customer clearly asks to cancel.",
         "parameters": {"type": "object", "properties": {"order_id": {"type": "integer"}}, "required": ["order_id"]}}},
     {"type": "function", "function": {
+        "name": "resume_unfinished_order", "description": "For an earlier unfinished order that was set aside: restore it as the current order, or discard it. Use only after the customer answers.",
+        "parameters": {"type": "object", "properties": {
+            "action": {"type": "string", "enum": ["restore", "discard"]},
+            "replace_current": {"type": "boolean", "description": "Replace items already in the new order (only if the customer said so)."}},
+            "required": ["action"]}}},
+    {"type": "function", "function": {
         "name": "request_human_support", "description": "Hand the conversation to the store team and alert them. The bot then stays quiet for this customer.",
         "parameters": {"type": "object", "properties": {"reason": {"type": "string", "maxLength": 200}}, "required": ["reason"]}}},
 ]
@@ -86,6 +108,7 @@ class ToolContext:
     now: datetime
     summary: order_svc.OrderSummary | None = None  # set by show_order_summary
     handoff_reason: str | None = None  # set by request_human_support
+    quick_replies: tuple[str, ...] = ()  # set by offer_choices
     log: list[str] = field(default_factory=list)
 
 
@@ -100,6 +123,17 @@ def _parse_local(ctx: ToolContext, value: str) -> datetime:
 def _fmt_local(dt: datetime, tz: str) -> str:
     d = local(dt, tz)
     return f"{d:%a %b} {d.day} at {d:%-I:%M %p}"
+
+
+def _validate_for_cart(ctx: ToolContext, when: datetime, view: cart_svc.CartView | None = None) -> PickupValidation:
+    """Pickup check that includes the notice the cart's items need (Special Design Donut: day before)."""
+    view = view or cart_svc.view_cart(ctx.conn, ctx.customer_id, ctx.settings.tax_rate_bps)
+    days, notice = view.advance_notice()
+    return validate_pickup_time(ctx.biz, when, ctx.now, days, notice)
+
+
+def _suggestions(ctx: ToolContext, pv: PickupValidation) -> list[str]:
+    return [_fmt_local(s, ctx.biz.timezone) + f" ({s:%Y-%m-%d %H:%M})" for s in pv.suggestions]
 
 
 def _cart_json(ctx: ToolContext, view: cart_svc.CartView | None = None) -> dict:
@@ -120,6 +154,10 @@ def _cart_json(ctx: ToolContext, view: cart_svc.CartView | None = None) -> dict:
         "missing": missing,
         "unavailable_items": view.unavailable or None,
     }
+    if view.pickup_time is not None and not view.is_empty:
+        pv = _validate_for_cart(ctx, view.pickup_time, view)
+        if not pv.ok:  # e.g. a design donut was added to a same-day order, or the time has passed
+            out["pickup_time_problem"] = {"reason": pv.reason, "suggestions": _suggestions(ctx, pv)}
     if (not view.customer_name or not view.customer_phone) and (saved := customers.saved_contact(ctx.conn, ctx.customer_id)):
         out["saved_contact_from_last_order"] = saved  # offer to reuse; never assume
     return out
@@ -155,6 +193,8 @@ def _item_json(conn: sqlite3.Connection, it: sqlite3.Row) -> dict:
     if rules:
         out["requires_details"] = {"message": rules.questions.get("message") or custom_items.DEFAULT_QUESTIONS["message"],
                                    "design": rules.questions.get("design") or custom_items.DEFAULT_QUESTIONS["design"]}
+        if rules.min_days_ahead:
+            out["order_ahead"] = custom_items.notice_text(it["name"], rules.min_days_ahead)
         if rules.name_free_letters is not None:
             out["long_name_rule"] = f"Names longer than {rules.name_free_letters} letters have an extra charge the store confirms."
     if it["description"]:
@@ -186,6 +226,18 @@ def _dispatch(ctx: ToolContext, name: str, a: dict) -> dict:
                     seen.setdefault(r["id"], r)
             rows = list(seen.values())[:8]
         return {"items": [_item_json(conn, r) for r in rows]} if rows else {"items": [], "note": "No matching items on the menu."}
+    if name == "browse_menu":
+        return menu.browse(conn, str(a.get("category") or "")[:60] or None)
+    if name == "offer_choices":
+        opts = []
+        for o in a.get("options") or []:
+            o = " ".join(str(o).split())[:60]
+            if o and o.lower() not in (x.lower() for x in opts):
+                opts.append(o)
+        if len(opts) < 2:
+            raise ValueError("Give at least 2 different options.")
+        ctx.quick_replies = tuple(opts[:13])
+        return {"ok": True, "note": "Buttons will appear under your reply. Still ask the question in your reply."}
     if name == "search_knowledge":
         docs = knowledge.search(conn, str(a["query"])[:200])
         return {"documents": docs} if docs else {"documents": [], "note": "No approved information found. Don't guess; offer to connect them with the team."}
@@ -208,17 +260,16 @@ def _dispatch(ctx: ToolContext, name: str, a: dict) -> dict:
     if name == "remove_from_cart":
         return {"ok": True, "cart": _cart_json(ctx, cart_svc.remove_item(conn, cid, int(a["line_id"])))}
     if name == "check_pickup_time":
-        pv = validate_pickup_time(ctx.biz, _parse_local(ctx, str(a["pickup_time"])), ctx.now)
+        pv = _validate_for_cart(ctx, _parse_local(ctx, str(a["pickup_time"])))
         return {"ok": pv.ok, "pickup_time": _fmt_local(pv.pickup_local, ctx.biz.timezone), "reason": pv.reason,
-                "suggestions": [_fmt_local(s, ctx.biz.timezone) + f" ({s:%Y-%m-%d %H:%M})" for s in pv.suggestions] or None}
+                "suggestions": _suggestions(ctx, pv) or None}
     if name == "set_pickup_details":
         when = None
         if a.get("pickup_time"):
             when = _parse_local(ctx, str(a["pickup_time"]))
-            pv = validate_pickup_time(ctx.biz, when, ctx.now)
+            pv = _validate_for_cart(ctx, when)
             if not pv.ok:
-                return {"ok": False, "reason": pv.reason,
-                        "suggestions": [_fmt_local(s, ctx.biz.timezone) + f" ({s:%Y-%m-%d %H:%M})" for s in pv.suggestions]}
+                return {"ok": False, "reason": pv.reason, "suggestions": _suggestions(ctx, pv)}
         view = cart_svc.set_pickup_details(conn, cid, pickup_time=when, customer_name=a.get("customer_name") or None,
                                            customer_phone=a.get("customer_phone") or None,
                                            notes=a.get("notes") if a.get("notes") is not None else None)
@@ -239,6 +290,15 @@ def _dispatch(ctx: ToolContext, name: str, a: dict) -> dict:
                             f"Order #{o['id']} ({o['customer_name']}) was CANCELLED by the customer on Messenger.",
                             f"order:{o['id']}:cancelled", order_id=o["id"])
         return {"ok": True, "order_id": o["id"], "status": "cancelled"}
+    if name == "resume_unfinished_order":
+        if a.get("action") == "discard":
+            sessions.discard_set_aside(conn, cid)
+            return {"ok": True, "note": "Earlier order dropped. Start fresh."}
+        view = sessions.restore_set_aside(conn, cid, ctx.now, bool(a.get("replace_current")))
+        out = {"ok": True, "cart": _cart_json(ctx, view)}
+        if view.pickup_time is None:
+            out["note"] = "The old pickup time had passed, so ask for a new one."
+        return out
     if name == "request_human_support":
         reason = str(a.get("reason", "customer needs help"))[:200]
         ctx.handoff_reason = reason

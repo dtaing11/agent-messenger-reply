@@ -28,6 +28,9 @@ class FakeResponder:
     async def send_order_summary(self, psid, text, token):
         self.sent.append((psid, text, token))
 
+    async def send_choices(self, psid, text, options):
+        self.sent.append((psid, text, tuple(options)))
+
     async def send_update(self, psid, text):
         self.sent.append((psid, text, "UPDATE"))
 

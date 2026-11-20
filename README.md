@@ -36,6 +36,10 @@ order updates on Messenger, a menu editor, and customer profiles with pickup his
 | Customer Messenger updates on accept / decline / ready / expiry (within Meta's 24 h window) | done |
 | Pickup check: owners are asked "picked up?" after each pickup time; no-shows kept per customer (owner-only) and flagged on their next order | done |
 | Customer phone number collected with name and pickup time | done |
+| Special Design Donut must be ordered by the day before pickup (not a full 24 hours; checked on every pickup time and summary) | done |
+| 3 AM text to the owners on the pickup day listing orders placed on an earlier day (`OWNER_REMINDER_HOUR`) | done |
+| Fresh start after 12 quiet hours: the AI sees only the new messages; an unfinished cart is set aside and offered back once (`SESSION_IDLE_HOURS`) | done |
+| Short menu answers on phones: per-item prices from `browse_menu`, one level at a time, tap-to-pick quick replies | done |
 | Menu editor in the portal (prices, items, add-ons, categories, flavors) | done |
 | Developer portal | done (see below) |
 

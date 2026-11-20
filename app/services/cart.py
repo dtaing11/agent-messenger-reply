@@ -40,6 +40,7 @@ class CartLine:
     surcharge_cents: int = 0
     surcharge_pending: bool = False  # a surcharge applies but the store sets the amount
     needs_review: bool = False
+    min_days_ahead: int = 0  # calendar days of notice this item needs (Special Design Donut: 1)
 
 
 @dataclass
@@ -66,6 +67,13 @@ class CartView:
     @property
     def needs_review(self) -> bool:
         return any(l.needs_review for l in self.lines)
+
+    def advance_notice(self) -> tuple[int, str | None]:
+        """(days, what to tell the customer) for the item in the cart needing the most notice."""
+        line = max(self.lines, key=lambda l: l.min_days_ahead, default=None)
+        if line is None or not line.min_days_ahead:
+            return 0, None
+        return line.min_days_ahead, custom_items.notice_text(line.name, line.min_days_ahead)
 
 
 def get_or_create_cart(conn: sqlite3.Connection, customer_id: int) -> sqlite3.Row:
@@ -296,6 +304,7 @@ def _view(conn: sqlite3.Connection, cart: sqlite3.Row, tax_rate_bps: int) -> Car
                 r["line_id"], r["item_id"], r["name"], r["unit_label"], r["quantity"], tuple(mods), unit,
                 unit * r["quantity"], ok, details=details, surcharge_cents=extra, surcharge_pending=pending,
                 needs_review=bool(rules and rules.always_review),
+                min_days_ahead=rules.min_days_ahead if rules else 0,
             )
         )
     return CartView(

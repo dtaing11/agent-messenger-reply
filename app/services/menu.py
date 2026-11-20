@@ -102,3 +102,42 @@ def pool_labels(conn: sqlite3.Connection, category: str, price_cents: int) -> li
         else:
             out.append(it["name"])
     return out
+
+
+def browse(conn: sqlite3.Connection, category: str | None = None) -> dict:
+    """A compact, scannable view of the menu for the assistant: the categories, or one
+    category's items with each item's own price (so a reply never claims "all $X" wrongly)."""
+    from app.services.pricing import money
+
+    rows = conn.execute(
+        f"SELECT * FROM ({_ITEMS}) ORDER BY (SELECT sort_order FROM menu_categories WHERE id = category), sort_order, name"
+    ).fetchall()
+    by_cat: dict[str, list[sqlite3.Row]] = {}
+    for r in rows:
+        by_cat.setdefault(r["category"], []).append(r)
+
+    def price_range(items: list[sqlite3.Row]) -> str:
+        lo, hi = min(i["price_cents"] for i in items), max(i["price_cents"] for i in items)
+        return money(lo) if lo == hi else f"{money(lo)}-{money(hi)}"
+
+    if not category:
+        return {"categories": [{"category": items[0]["category_name"], "items": len(items), "prices": price_range(items)}
+                               for items in by_cat.values()]}
+    want = " ".join(category.lower().replace("_", " ").split())
+    match = [c for c, items in by_cat.items()
+             if want in (c.replace("_", " "), items[0]["category_name"].lower())]
+    match = match or [c for c, items in by_cat.items()
+                      if want in c.replace("_", " ") or want in items[0]["category_name"].lower()]
+    if not match:
+        return {"error": f"No category called {category!r}.",
+                "categories": [items[0]["category_name"] for items in by_cat.values()]}
+    items = by_cat[match[0]]
+    prices = {i["price_cents"] for i in items}
+    return {
+        "category": items[0]["category_name"],
+        "items": [{"item_id": i["id"], "name": i["name"], "price_before_tax": money(i["price_cents"]),
+                   "has_choices": bool(i["choices"] and i["choices"] != "[]") or bool(i["custom_rules"])} for i in items],
+        "same_price": len(prices) == 1,
+        "price_note": (f"Every item here is {money(next(iter(prices)))}." if len(prices) == 1
+                       else "Prices differ: give each item its own price."),
+    }

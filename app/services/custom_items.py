@@ -16,6 +16,9 @@ class CustomRules:
     name_free_letters: int | None = None  # names with more letters than this get a surcharge
     long_name_surcharge_cents: int | None = None  # None = amount set by the store at acceptance
     always_review: bool = True
+    # Calendar days of notice: 1 = order by the day before pickup (not a full 24 hours). The owner
+    # said made-to-order items can't be same day, so that's the default unless the menu says 0.
+    min_days_ahead: int = 1
     # What the assistant should ask when a detail is missing.
     questions: dict[str, str] = field(default_factory=dict)
 
@@ -30,6 +33,7 @@ class CustomRules:
             name_free_letters=d.get("name_free_letters"),
             long_name_surcharge_cents=d.get("long_name_surcharge_cents"),
             always_review=bool(d.get("always_review", True)),
+            min_days_ahead=max(0, int(d.get("min_days_ahead", 1))),
             questions=dict(d.get("questions", {})),
         )
 
@@ -229,3 +233,11 @@ def apply_choices(choices: list[Choice], item_name: str, details: dict) -> dict:
     if missing:
         raise MissingDetails(missing, questions)
     return picked
+
+
+def notice_text(item_name: str, days: int) -> str:
+    """How to tell a customer about an item's advance notice (owner: never say "24 hours")."""
+    if days <= 1:
+        return (f"{item_name} orders need to be placed by the day before pickup. It doesn't have to be a full "
+                "24 hours ahead: ordering today for pickup tomorrow morning is fine, but not for today.")
+    return f"{item_name} orders need to be placed at least {days} days before the pickup day."

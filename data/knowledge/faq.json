@@ -17,6 +17,6 @@
      "answer": "Orders placed here on Messenger are for pickup at the store. You confirm your order, then our team accepts it and you pay at pickup."},
     {"id": "special_design_donut", "category": "special_orders",
      "question": "Do you make custom or decorated donuts for birthdays, holidays or events?",
-     "answer": "Yes! Our Special Design Donut is $22.89 before tax. It can say things like \"Happy Birthday\", \"Happy Bday {Name}\" or \"Merry Christmas\". Names longer than 7 letters have an extra charge that our team confirms. Tell us the message and the design you'd like (theme, colors, decorations)."}
+     "answer": "Yes! Our Special Design Donut is $22.89 before tax. It can say things like \"Happy Birthday\", \"Happy Bday {Name}\" or \"Merry Christmas\". Names longer than 7 letters have an extra charge that our team confirms. Tell us the message and the design you'd like (theme, colors, decorations). Please order by the day before pickup: it doesn't have to be a full 24 hours, so ordering today for tomorrow morning is fine, but we can't make them for the same day."}
   ]
 }

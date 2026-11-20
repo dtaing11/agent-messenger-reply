@@ -12,12 +12,15 @@ The order number may be left off when exactly one order fits. No-shows are an ow
 record: the customer is never told, and the assistant never sees it.
 """
 
+import json
 import re
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 
 from app.agent.state_machine import InvalidTransition, OrderStatus, can_transition
 from app.config import Settings
+from app.database.connection import transaction
+from app.integrations.messenger import split_message
 from app.integrations.twilio import digits
 from app.services import customers, notify
 from app.services import order as order_svc
@@ -172,3 +175,65 @@ def queue_pickup_checks(conn: sqlite3.Connection, settings: Settings, biz: Busin
                                 order_id=o["id"])
             asked.append(o["id"])
     return asked
+
+
+REMINDER_STATUSES = (OrderStatus.ACCEPTED, OrderStatus.PREPARING)
+SMS_PART = 1500  # Twilio sends up to 1600 characters as one text; leave room for "(1/2)"
+
+
+def _reminder_order_lines(conn: sqlite3.Connection, order: sqlite3.Row, biz: BusinessInfo) -> list[str]:
+    t = local(from_db(order["pickup_time"]), biz.timezone)
+    phone = phone_display(order["customer_phone"])
+    lines = [f"#{order['id']} {t:%-I:%M %p} - {order['customer_name']}" + (f", {phone}" if phone else "")]
+    for it in conn.execute("SELECT * FROM order_items WHERE order_id = ? ORDER BY id", (order["id"],)):
+        mods = json.loads(it["modifiers_snapshot"])
+        lines.append(f"{it['quantity']} x {it['item_name_snapshot']}" + (f" ({', '.join(m['name'] for m in mods)})" if mods else ""))
+        lines += order_svc._detail_lines(json.loads(it["details_snapshot"]), indent="  ")
+    if order["notes"]:
+        lines.append(f"Notes: {order['notes']}")
+    lines.append(f"Subtotal {money(order['subtotal_cents'])} (before tax)")
+    return lines
+
+
+def day_reminder_texts(conn: sqlite3.Connection, orders: list[sqlite3.Row], biz: BusinessInfo, day: datetime) -> list[str]:
+    n = len(orders)
+    head = (f"Good morning! Reminder: {n} order{'s' if n != 1 else ''} placed ahead for pickup today "
+            f"({day:%a %b} {day.day}):")
+    lines = [head]
+    for o in orders:
+        lines += ["", *_reminder_order_lines(conn, o, biz)]
+    parts = split_message("\n".join(lines), SMS_PART)
+    return parts if len(parts) == 1 else [f"({i}/{len(parts)}) {p}" for i, p in enumerate(parts, 1)]
+
+
+def queue_day_reminders(conn: sqlite3.Connection, settings: Settings, biz: BusinessInfo, now: datetime) -> list[int]:
+    """From `owner_reminder_hour` (3 AM) on the pickup day, text every owner phone the accepted
+    orders for today that were placed on an earlier day, once. Runs late if the computer was off."""
+    hour = settings.owner_reminder_hour
+    if hour < 0 or not settings.owner_phone_numbers:
+        return []
+    now_local = local(now, biz.timezone)
+    if now_local.time() < time(hour):
+        return []
+    start = datetime.combine(now_local.date(), time(0), tzinfo=biz.tz)
+    marks = ",".join("?" * len(REMINDER_STATUSES))
+    rows = conn.execute(
+        f"""SELECT * FROM orders WHERE status IN ({marks}) AND day_reminder_sent_at IS NULL
+              AND pickup_time > ? AND pickup_time < ? AND created_at < ? ORDER BY pickup_time, id""",
+        (*[str(s) for s in REMINDER_STATUSES], to_db(now), to_db(start + timedelta(days=1)), to_db(start)),
+    ).fetchall()
+    if not rows:
+        return []
+    ids = [r["id"] for r in rows]
+    texts = day_reminder_texts(conn, rows, biz, now_local)
+    with transaction(conn):
+        claimed = conn.execute(
+            f"UPDATE orders SET day_reminder_sent_at = ? WHERE id IN ({','.join('?' * len(ids))}) AND day_reminder_sent_at IS NULL",
+            (to_db(now), *ids),
+        ).rowcount
+        if claimed != len(ids):
+            raise RuntimeError("day reminder raced with another worker")  # rolled back; next pass retries
+        key = f"day_reminder:{now_local:%Y-%m-%d}:{ids[0]}-{ids[-1]}"
+        for i, body in enumerate(texts, 1):
+            notify.alert_owners(conn, settings, "day_reminder", body, f"{key}:{i}")
+    return ids

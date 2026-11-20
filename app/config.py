@@ -43,6 +43,8 @@ class Settings(BaseSettings):
     # Ask OpenRouter to route only to providers that don't train on prompts.
     ai_deny_data_collection: bool = True
     ai_history_messages: int = Field(16, ge=2, le=60)
+    # After this many quiet hours a returning customer gets a fresh start (0 = never).
+    session_idle_hours: float = Field(12, ge=0, le=24 * 30)
 
     # Twilio
     twilio_account_sid: str = ""
@@ -60,6 +62,8 @@ class Settings(BaseSettings):
     customer_can_cancel_accepted: bool = False
     require_customer_phone: bool = True
     pickup_check_after_minutes: int = Field(30, ge=0, le=720)  # 0 = don't ask owners
+    # Store-local hour to text the owners the day's orders that were placed on an earlier day (-1 = off).
+    owner_reminder_hour: int = Field(3, ge=-1, le=23)
     large_order_threshold_cents: int = Field(10000, ge=0)
     confirmation_token_ttl_minutes: int = Field(30, ge=1)
 

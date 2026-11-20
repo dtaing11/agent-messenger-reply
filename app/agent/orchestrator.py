@@ -17,6 +17,7 @@ from app.agent.prompts import system_prompt
 from app.config import Settings
 from app.integrations.openrouter import LLMError, chat_with_fallback
 from app.services import conversation as conv_svc
+from app.services import sessions
 from app.services.business import BusinessInfo
 from app.services.order import OrderSummary
 from app.timeutil import local
@@ -36,6 +37,7 @@ class AgentResult:
     handoff_reason: str | None = None
     error: str | None = None  # the LLM failed; the caller apologizes and hands off
     tools_used: tuple[str, ...] = ()
+    quick_replies: tuple[str, ...] = ()  # tap-to-answer options sent under the reply text
 
 
 def ai_configured(settings: Settings) -> bool:
@@ -43,8 +45,14 @@ def ai_configured(settings: Settings) -> bool:
 
 
 def _history(conn: sqlite3.Connection, customer_id: int, limit: int) -> list[dict]:
+    """The latest messages of the current session (see services.sessions)."""
+    conv = conv_svc.get_conversation(conn, customer_id)
+    rows = conn.execute(
+        "SELECT role, content FROM messages WHERE conversation_id = ? AND id >= ? ORDER BY id DESC LIMIT ?",
+        (conv["id"], conv["session_start_message_id"] or 0, limit),
+    ).fetchall()
     out: list[dict] = []
-    for m in conv_svc.recent_messages(conn, customer_id, limit):
+    for m in reversed(rows):
         if m["role"] == "customer":
             out.append({"role": "user", "content": m["content"]})
         elif m["role"] == "assistant":
@@ -60,8 +68,17 @@ def _history(conn: sqlite3.Connection, customer_id: int, limit: int) -> list[dic
 def _cart_note(ctx: tools.ToolContext) -> str:
     cart = tools._cart_json(ctx)
     if not cart["lines"] and not cart["pickup_time"] and not cart["pickup_name"]:
-        return "The customer's cart is empty."
-    return "Current cart (already saved, don't add these again): " + json.dumps(cart, ensure_ascii=False)
+        note = "The customer's cart is empty."
+    else:
+        note = "Current cart (already saved, don't add these again): " + json.dumps(cart, ensure_ascii=False)
+    aside = sessions.set_aside_cart(ctx.conn, ctx.customer_id, ctx.settings.tax_rate_bps)
+    if aside is not None and not aside.is_empty:
+        items = [f"{l.quantity} x {l.name}" + (f" ({', '.join(str(v) for v in l.details.values())})" if l.details else "")
+                 for l in aside.lines]
+        note += ("\nThe customer started an order earlier and didn't finish it: " + "; ".join(items) + ". "
+                 "It was set aside because they were away a while. Ask once, briefly, whether they'd like to pick it back up, "
+                 "then call resume_unfinished_order with action restore or discard. Don't add those items yourself.")
+    return note
 
 
 async def run_agent(
@@ -108,4 +125,7 @@ def _finish(ctx: tools.ToolContext, content: str) -> AgentResult:
         text = HANDOFF_DEFAULT
     if text is None and ctx.summary is None:
         text = "Sorry, could you say that another way?"
-    return AgentResult(text=text, summary=ctx.summary, handoff_reason=ctx.handoff_reason, tools_used=tuple(ctx.log))
+    # Buttons only make sense under a question; a summary brings its own, and a handoff ends the chat.
+    quick = ctx.quick_replies if text and ctx.summary is None and not ctx.handoff_reason else ()
+    return AgentResult(text=text, summary=ctx.summary, handoff_reason=ctx.handoff_reason, tools_used=tuple(ctx.log),
+                       quick_replies=quick)

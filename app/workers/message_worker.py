@@ -16,9 +16,14 @@ from app.agent.state_machine import ConversationState, OrderStatus
 from app.config import Settings, get_settings
 from app.database.bootstrap import prepare
 from app.database.connection import connect
-from app.integrations.messenger import POSTBACK_CONFIRM, POSTBACK_MODIFY, MessengerClient
+from app.integrations.messenger import (
+    PICK,
+    POSTBACK_CONFIRM,
+    POSTBACK_MODIFY,
+    MessengerClient,
+)
 from app.services import conversation as conv_svc
-from app.services import notify, owner_commands
+from app.services import notify, owner_commands, sessions
 from app.services import order as order_svc
 from app.services.business import BusinessInfo, load_business
 from app.settings.runtime import effective_settings, set_marker
@@ -113,11 +118,13 @@ class MessageProcessor:
             return "done" if paused else await self._handle_payload(ctx, payload)
 
         msg = raw["message"]
-        if qr := msg.get("quick_reply"):
+        qr_payload = (msg.get("quick_reply") or {}).get("payload", "")
+        if msg.get("quick_reply") and not qr_payload.startswith(PICK):
             conv_svc.record_message(conn, cid, "customer", msg.get("text") or "[quick reply]", msg["mid"])
-            return "done" if paused else await self._handle_payload(ctx, qr.get("payload", ""))
+            return "done" if paused else await self._handle_payload(ctx, qr_payload)
 
-        text = (msg.get("text") or "").strip()
+        # A tapped option (offer_choices) counts as if the customer typed the full option.
+        text = (qr_payload.removeprefix(PICK) if qr_payload else msg.get("text") or "").strip()
         if not text:
             # Attachments, stickers, etc. are not supported: hand off to a person.
             conv_svc.record_message(conn, cid, "customer", "[attachment]", msg["mid"])
@@ -131,6 +138,7 @@ class MessageProcessor:
             return "done"  # paused or human handoff: stay silent
         if await self._resend_saved_reply(ctx, msg["mid"]):
             return "done"  # a retry after a failed send: don't run the AI (and change the cart) twice
+        sessions.maybe_start_session(conn, cid, msg["mid"], settings.session_idle_hours)
         result = await self.agent(conn, cid, settings, self.biz, now)
         await self._deliver(ctx, msg["mid"], result)
         return "done"
@@ -148,7 +156,9 @@ class MessageProcessor:
             conv_svc.record_message(ctx.conn, ctx.customer_id, "assistant", result.text, f"reply:{mid}")
         if result.summary:
             conv_svc.record_message(ctx.conn, ctx.customer_id, "assistant", result.summary.text, f"reply:{mid}:summary")
-        if result.text:
+        if result.text and result.quick_replies:
+            await ctx.responder.send_choices(ctx.psid, result.text, result.quick_replies)
+        elif result.text:
             await ctx.responder.send_text(ctx.psid, result.text)
         if result.summary:
             await ctx.responder.send_order_summary(ctx.psid, result.summary.text, result.summary.token)
@@ -263,8 +273,10 @@ def housekeeping_once(conn: sqlite3.Connection, settings: Settings, biz: Busines
                             f"Order #{order_id} ({order['customer_name']}) expired without a reply. The customer was told.",
                             f"order:{order_id}:expired", order_id=order_id)
     asked = owner_commands.queue_pickup_checks(conn, settings, biz, now)
-    if released or expired or asked:
-        log.info("housekeeping released=%d expired_orders=%s pickup_checks=%s", released, expired, asked)
+    reminded = owner_commands.queue_day_reminders(conn, settings, biz, now)
+    if released or expired or asked or reminded:
+        log.info("housekeeping released=%d expired_orders=%s pickup_checks=%s day_reminders=%s",
+                 released, expired, asked, reminded)
 
 
 async def _housekeeping(settings: Settings, processor: MessageProcessor) -> None:

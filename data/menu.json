@@ -1252,6 +1252,7 @@
         "name_free_letters": 7,
         "long_name_surcharge_cents": null,
         "always_review": true,
+        "min_days_ahead": 1,
         "questions": {
           "message": "What would you like written on it? For example \"Happy Birthday\", \"Happy Bday Emma\" or \"Merry Christmas\".",
           "design": "What kind of design are you looking for (theme, colors, decorations)?"

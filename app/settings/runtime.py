@@ -42,6 +42,7 @@ PLAIN_FIELDS = (
     "customer_can_cancel_accepted",
     "require_customer_phone",
     "pickup_check_after_minutes",
+    "owner_reminder_hour",
     "pause_bot_on_staff_reply",
 )
 
