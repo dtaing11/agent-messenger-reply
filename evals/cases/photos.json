@@ -1,0 +1,22 @@
+[
+ {"id": "design_reference_photo",
+  "description": "A photo while ordering a design donut is kept with the order; no handoff.",
+  "now": "2026-11-18 08:00",
+  "turns": [{"say": "Special design donut for tomorrow 9am that says Happy 30th Sam, I'll send a picture of the design"}, {"photo": true}],
+  "expect": {"photos_attached": 1, "handoff": false, "cart_exact": false, "cart": [{"item_id": "special_design_donut", "quantity": 1}]}},
+ {"id": "random_photo_goes_to_staff",
+  "description": "A photo with no design order goes to staff.",
+  "now": "2026-11-18 08:00",
+  "turns": [{"photo": true}],
+  "expect": {"handoff": true, "photos_attached": 0, "reply_any": ["team"]}},
+ {"id": "complaint_photo_after_menu",
+  "description": "A complaint photo after the menu was shown (which mentions Special Design Donut) must still go to staff.",
+  "now": "2026-11-18 08:00",
+  "turns": [{"say": "What's on your menu?"}, {"say": "Actually my donuts yesterday were moldy, look"}, {"photo": true}],
+  "expect": {"handoff": true, "photos_attached": 0}},
+ {"id": "photo_mid_regular_order",
+  "description": "A photo in the middle of a normal order (no design donut) goes to staff.",
+  "now": "2026-11-18 08:00",
+  "turns": [{"say": "Dozen glazed for tomorrow 7am"}, {"photo": true}],
+  "expect": {"handoff": true}}
+]
