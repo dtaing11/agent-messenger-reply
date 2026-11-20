@@ -32,19 +32,19 @@ def run_tool(c, name, args):
     return asyncio.run(tools.execute(c, name, args))
 
 
-# ---- day-before notice
+# ---- notice: confirmed by 3 AM on the pickup day (owner, 2026-11-20; was "by the day before")
 
 def test_rules_default_to_a_day_of_notice():
     assert custom_items.CustomRules.from_json('{"questions": {}}').min_days_ahead == 1
     assert custom_items.CustomRules.from_json('{"min_days_ahead": 0}').min_days_ahead == 0
     text = custom_items.notice_text("Special Design Donut", 1)
-    assert "by the day before pickup" in text and "today for pickup tomorrow morning is fine" in text
+    assert "by 3 AM on the pickup day" in text and "today for pickup tomorrow morning is fine" in text
 
 
 def test_same_day_refused_tomorrow_fine_even_under_24_hours(biz):
     reason = custom_items.notice_text("Special Design Donut", 1)
     pv = validate_pickup_time(biz, TODAY_11, NOW, 1, reason)
-    assert not pv.ok and pv.reason == reason
+    assert not pv.ok and pv.reason.startswith(reason) and "too late" in pv.reason
     assert pv.suggestions and all(local(s, biz.timezone).date() > TODAY_11.date() for s in pv.suggestions)
     late_evening = datetime(2026, 11, 18, 22, 30, tzinfo=CT)
     assert validate_pickup_time(biz, TOMORROW_6, late_evening, 1, reason).ok  # 7.5 hours ahead is fine
@@ -54,10 +54,10 @@ def test_same_day_refused_tomorrow_fine_even_under_24_hours(biz):
 def test_tools_explain_the_notice(conn, customer_id, settings, biz):
     c = ctx(conn, customer_id, settings, biz)
     item = run_tool(c, "search_menu", {"query": "special design"})["items"][0]
-    assert "day before pickup" in item["order_ahead"]
+    assert "3 AM on the pickup day" in item["order_ahead"]
     run_tool(c, "add_to_cart", {"item_id": "special_design_donut", "quantity": 1, "details": DESIGN})
     r = run_tool(c, "check_pickup_time", {"pickup_time": "2026-11-18 11:00"})
-    assert r["ok"] is False and "day before pickup" in r["reason"] and "2026-11-19" in r["suggestions"][0]
+    assert r["ok"] is False and "3 AM on the pickup day" in r["reason"] and "2026-11-19" in r["suggestions"][0]
     r = run_tool(c, "set_pickup_details", {"pickup_time": "2026-11-18 11:00"})
     assert r["ok"] is False and cart.view_cart(conn, customer_id).pickup_time is None
     r = run_tool(c, "set_pickup_details", {"pickup_time": "2026-11-19 06:00"})
@@ -69,13 +69,13 @@ def test_adding_design_donut_to_same_day_order_flags_it(conn, customer_id, setti
     run_tool(c, "add_to_cart", {"item_id": "glazed_dozen", "quantity": 1})
     assert run_tool(c, "set_pickup_details", {"pickup_time": "2026-11-18 11:00"})["ok"]
     r = run_tool(c, "add_to_cart", {"item_id": "special_design_donut", "quantity": 1, "details": DESIGN})
-    assert "day before pickup" in r["cart"]["pickup_time_problem"]["reason"]
+    assert "3 AM on the pickup day" in r["cart"]["pickup_time_problem"]["reason"]
 
 
 def test_summary_refuses_same_day_design_donut(conn, customer_id, settings, biz):
     cart.add_item(conn, customer_id, "special_design_donut", 1, details=DESIGN)
     cart.set_pickup_details(conn, customer_id, pickup_time=TODAY_11, customer_name="Ann", customer_phone="225-555-0123")
-    with pytest.raises(order_svc.OrderError, match="day before pickup"):
+    with pytest.raises(order_svc.OrderError, match="3 AM on the pickup day"):
         order_svc.present_order_summary(conn, customer_id, biz, settings, NOW)
     cart.set_pickup_details(conn, customer_id, pickup_time=TOMORROW_6)
     assert order_svc.present_order_summary(conn, customer_id, biz, settings, NOW).token
@@ -83,7 +83,7 @@ def test_summary_refuses_same_day_design_donut(conn, customer_id, settings, biz)
 
 def test_prompt_states_the_rule_without_promising_24_hours(biz):
     p = system_prompt(biz, local(NOW, biz.timezone))
-    assert "by the day before pickup" in p and "today for tomorrow morning is fine" in p
+    assert "by 3 AM on the pickup day" in p and "today for tomorrow morning is fine" in p
     assert "Never tell a customer it needs 24 hours" in p
 
 

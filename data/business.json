@@ -43,7 +43,8 @@
     "min_lead_minutes": 30,
     "max_days_ahead": 14,
     "slot_minutes": 15,
-    "last_pickup_minutes_before_close": 15
+    "last_pickup_minutes_before_close": 15,
+    "notice_cutoff_hour": 3
   },
   "payment": "Payment at pickup. We do not take card details over Messenger.",
   "location_display": "Denham Springs / Watson",

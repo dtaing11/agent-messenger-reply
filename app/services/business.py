@@ -18,6 +18,10 @@ class PickupRules:
     # Owner: the last pickup is 12:15 on a 12:30 closing day. A real rule, not a side effect
     # of the slot size, so a smaller slot can't quietly allow 12:25.
     last_pickup_before_close_minutes: int = 15
+    # Owner, 2026-11-20: orders that need notice (Special Design Donut) must be confirmed by
+    # this hour on the pickup day, when the team starts baking (ordered Friday for Saturday:
+    # confirmed by 3 AM Saturday). With more days of notice, that many days earlier.
+    notice_cutoff_hour: int = 3
 
 
 @dataclass(frozen=True)
@@ -100,6 +104,7 @@ def parse_business(data: dict) -> BusinessInfo:
             max_days_ahead=int(p.get("max_days_ahead", 14)),
             slot_minutes=int(p.get("slot_minutes", 15)),
             last_pickup_before_close_minutes=int(p.get("last_pickup_minutes_before_close", 15)),
+            notice_cutoff_hour=int(p.get("notice_cutoff_hour", 3)),
         ),
         raw=data,
     )
@@ -136,13 +141,32 @@ def staffed_from(biz: BusinessInfo, now: datetime) -> datetime:
     return local  # no hours configured: start the clock now
 
 
+def hour_text(hour: int) -> str:
+    return time(hour).strftime("%-I %p")
+
+
+def notice_deadline(biz: BusinessInfo, pickup_day: date, min_days_ahead: int) -> datetime:
+    """When an order that needs notice must be confirmed for pickup on `pickup_day`:
+    3 AM (notice_cutoff_hour) on the pickup day for one day of notice, a day earlier per extra day."""
+    day = pickup_day - timedelta(days=max(min_days_ahead, 1) - 1)
+    return datetime.combine(day, time(biz.pickup.notice_cutoff_hour), tzinfo=biz.tz)
+
+
+def first_notice_day(biz: BusinessInfo, now: datetime, min_days_ahead: int) -> date:
+    """The earliest pickup day an order needing notice can still make."""
+    now_local = now.astimezone(biz.tz)
+    day = now_local.date() + timedelta(days=max(min_days_ahead, 1) - 1)
+    return day if now_local < notice_deadline(biz, day, min_days_ahead) else day + timedelta(days=1)
+
+
 def validate_pickup_time(biz: BusinessInfo, pickup: datetime, now: datetime, min_days_ahead: int = 0,
                          notice_reason: str | None = None) -> PickupValidation:
     """Check a pickup time against hours, closures, lead time and the booking horizon.
 
     `pickup` must be timezone-aware; callers interpret customer text in the store timezone.
-    `min_days_ahead` is calendar days of notice for items like the Special Design Donut
-    (1 = any time tomorrow or later), with `notice_reason` as the explanation for the customer.
+    `min_days_ahead` is days of notice for items like the Special Design Donut (1 = confirmed by
+    3 AM on the pickup day; see notice_deadline), with `notice_reason` as the explanation for
+    the customer. Checked again when the order is sent, so a late confirmation is refused.
     """
     if pickup.tzinfo is None:
         raise ValueError("pickup time must be timezone-aware")
@@ -150,8 +174,11 @@ def validate_pickup_time(biz: BusinessInfo, pickup: datetime, now: datetime, min
     now_local = now.astimezone(biz.tz)
 
     reason = None
-    if min_days_ahead and local.date() < now_local.date() + timedelta(days=min_days_ahead):
-        reason = notice_reason or f"This order needs to be placed at least {min_days_ahead} day(s) before pickup."
+    if min_days_ahead and now_local >= notice_deadline(biz, local.date(), min_days_ahead):
+        deadline = notice_deadline(biz, local.date(), min_days_ahead)
+        reason = ((notice_reason or "This order needs more notice.") +
+                  f" For pickup on {local:%a %b} {local.day}, it had to be confirmed by "
+                  f"{hour_text(deadline.hour)} on {deadline:%a %b} {deadline.day}, so that day is too late.")
     elif local < now_local + timedelta(minutes=biz.pickup.min_lead_minutes):
         reason = f"Pickup needs at least {biz.pickup.min_lead_minutes} minutes' notice."
     elif local.date() > now_local.date() + timedelta(days=biz.pickup.max_days_ahead):
@@ -178,7 +205,7 @@ def next_slots(biz: BusinessInfo, now: datetime, after: datetime | None = None, 
     earliest = now.astimezone(biz.tz) + timedelta(minutes=biz.pickup.min_lead_minutes)
     last_day = earliest.date() + timedelta(days=biz.pickup.max_days_ahead)
     if min_days_ahead:
-        first_day = now.astimezone(biz.tz).date() + timedelta(days=min_days_ahead)
+        first_day = first_notice_day(biz, now, min_days_ahead)
         earliest = max(earliest, datetime.combine(first_day, time(0), tzinfo=biz.tz))
     start = max(earliest, after.astimezone(biz.tz)) if after else earliest
     if start.date() > last_day:

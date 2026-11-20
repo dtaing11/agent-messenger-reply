@@ -68,12 +68,12 @@ class CartView:
     def needs_review(self) -> bool:
         return any(l.needs_review for l in self.lines)
 
-    def advance_notice(self) -> tuple[int, str | None]:
+    def advance_notice(self, cutoff_hour: int = 3) -> tuple[int, str | None]:
         """(days, what to tell the customer) for the item in the cart needing the most notice."""
         line = max(self.lines, key=lambda l: l.min_days_ahead, default=None)
         if line is None or not line.min_days_ahead:
             return 0, None
-        return line.min_days_ahead, custom_items.notice_text(line.name, line.min_days_ahead)
+        return line.min_days_ahead, custom_items.notice_text(line.name, line.min_days_ahead, cutoff_hour)
 
 
 def get_or_create_cart(conn: sqlite3.Connection, customer_id: int) -> sqlite3.Row:

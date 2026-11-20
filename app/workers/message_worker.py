@@ -359,10 +359,10 @@ class MessageProcessor:
         cart = ctx.conn.execute("SELECT customer_id FROM carts WHERE id = ?", (int(p["cart_id"]),)).fetchone()
         if cart is None or cart["customer_id"] != ctx.customer_id or conv["last_customer_message_at"] != p.get("last_customer_message_at"):
             return "ignored"
-        due, missing = reminders.still_due(ctx.conn, ctx.settings, int(p["cart_id"]), ctx.now)
-        if not due:
+        due = reminders.still_due(ctx.conn, ctx.settings, self.biz, int(p["cart_id"]), ctx.now)
+        if not due.due:
             return "ignored"
-        text = reminders.reminder_text(missing)
+        text = reminders.reminder_text(due.missing, due.deadline, due.item)
         await ctx.responder.send_update(ctx.psid, text)
         conv_svc.record_message(ctx.conn, ctx.customer_id, "assistant", text, key)
         return "done"
@@ -449,7 +449,7 @@ def housekeeping_once(conn: sqlite3.Connection, settings: Settings, biz: Busines
     asked = owner_commands.queue_pickup_checks(conn, settings, biz, now)
     reminded = owner_commands.queue_day_reminders(conn, settings, biz, now)
     checkins = owner_accounts.queue_checkins(conn, biz.timezone, now) if settings.owner_alert_channel != "sms" else []
-    nudged = reminders.queue_contact_reminders(conn, settings, now)
+    nudged = reminders.queue_contact_reminders(conn, settings, biz, now)
     if released or expired or asked or reminded or checkins or nudged:
         log.info("housekeeping released=%d expired_orders=%s pickup_checks=%s day_reminders=%s owner_checkins=%s "
                  "contact_reminders=%s", released, expired, asked, reminded, checkins, nudged)

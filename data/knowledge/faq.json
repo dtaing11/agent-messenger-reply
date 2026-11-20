@@ -17,7 +17,7 @@
      "answer": "Orders placed here on Messenger are for pickup at the store. You confirm your order, then our team accepts it and you pay at pickup."},
     {"id": "special_design_donut", "category": "special_orders",
      "question": "Do you make custom or decorated donuts for birthdays, holidays or events?",
-     "answer": "Yes! Our Special Design Donut is $22.89 before tax. It can say things like \"Happy Birthday\", \"Happy Bday {Name}\" or \"Merry Christmas\". Names longer than 7 letters have an extra charge that our team confirms. Tell us the message and the design you'd like (theme, colors, decorations). Please order by the day before pickup: it doesn't have to be a full 24 hours, so ordering today for tomorrow morning is fine, but we can't make them for the same day."},
+     "answer": "Yes! Our Special Design Donut is $22.89 before tax. It can say things like \"Happy Birthday\", \"Happy Bday {Name}\" or \"Merry Christmas\". Names longer than 7 letters have an extra charge that our team confirms. Tell us the message and the design you'd like (theme, colors, decorations). Please order the day before pickup: the order, with the pickup name and phone number, has to be confirmed by 3 AM on the pickup day, when our team starts baking. It doesn't have to be a full 24 hours, so ordering today for tomorrow morning is fine."},
     {"id": "freshness", "category": "food", "question": "Are the donuts fresh? Are they made today or left over from yesterday? When do you bake?",
      "answer": "Yes! Our staff wake up at 3 AM every day to bake everything fresh that morning. Nothing is left over from the day before, so everything we sell is baked the same day."}
   ]

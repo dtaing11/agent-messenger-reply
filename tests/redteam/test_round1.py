@@ -261,11 +261,14 @@ def test_hours_boundaries(biz, hhmm, ok):
     assert validate_pickup_time(biz, when, NOW).ok is ok
 
 
-def test_design_donut_day_before_boundaries(biz):
+def test_design_donut_deadline_boundaries(biz):
+    """Owner, 2026-11-20 (replacing "by the day before"): confirmed by 3 AM on the pickup day."""
     late = datetime(2026, 11, 18, 23, 59, tzinfo=CT)
     assert validate_pickup_time(biz, datetime(2026, 11, 19, 4, 30, tzinfo=CT), late, 1).ok
+    assert validate_pickup_time(biz, datetime(2026, 11, 19, 11, 0, tzinfo=CT),
+                                datetime(2026, 11, 19, 2, 59, tzinfo=CT), 1).ok
     assert not validate_pickup_time(biz, datetime(2026, 11, 19, 11, 0, tzinfo=CT),
-                                    datetime(2026, 11, 19, 0, 1, tzinfo=CT), 1).ok
+                                    datetime(2026, 11, 19, 3, 0, tzinfo=CT), 1).ok
 
 
 def test_dst_days(biz):

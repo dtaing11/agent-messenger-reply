@@ -179,7 +179,7 @@ def _fmt_local(dt: datetime, tz: str) -> str:
 def _validate_for_cart(ctx: ToolContext, when: datetime, view: cart_svc.CartView | None = None) -> PickupValidation:
     """Pickup check that includes the notice the cart's items need (Special Design Donut: day before)."""
     view = view or cart_svc.view_cart(ctx.conn, ctx.customer_id, ctx.settings.tax_rate_bps)
-    days, notice = view.advance_notice()
+    days, notice = view.advance_notice(ctx.biz.pickup.notice_cutoff_hour)
     return validate_pickup_time(ctx.biz, when, ctx.now, days, notice)
 
 
@@ -214,7 +214,7 @@ def _cart_json(ctx: ToolContext, view: cart_svc.CartView | None = None) -> dict:
     return out
 
 
-def _item_json(conn: sqlite3.Connection, it: sqlite3.Row) -> dict:
+def _item_json(conn: sqlite3.Connection, it: sqlite3.Row, cutoff_hour: int = 3) -> dict:
     category = it["category_name"] if "category_name" in it.keys() else it["category"].replace("_", " ")
     out = {"item_id": it["id"], "name": it["name"], "category": category,
            "unit": it["unit_label"], "price_before_tax": money(it["price_cents"]), "max_quantity": it["max_quantity"]}
@@ -247,7 +247,7 @@ def _item_json(conn: sqlite3.Connection, it: sqlite3.Row) -> dict:
         out["requires_details"] = {"message": rules.questions.get("message") or custom_items.DEFAULT_QUESTIONS["message"],
                                    "design": rules.questions.get("design") or custom_items.DEFAULT_QUESTIONS["design"]}
         if rules.min_days_ahead:
-            out["order_ahead"] = custom_items.notice_text(it["name"], rules.min_days_ahead)
+            out["order_ahead"] = custom_items.notice_text(it["name"], rules.min_days_ahead, cutoff_hour)
         if rules.name_free_letters is not None:
             out["long_name_rule"] = f"Names longer than {rules.name_free_letters} letters have an extra charge the store confirms."
     if it["description"]:
@@ -278,7 +278,7 @@ def _dispatch(ctx: ToolContext, name: str, a: dict) -> dict:
                                              min_score=ctx.settings.semantic_min_score)
         if not rows:
             return {"items": [], "note": "No matching items on the menu."}
-        out = {"items": [_item_json(conn, r) for r in rows]}
+        out = {"items": [_item_json(conn, r, ctx.biz.pickup.notice_cutoff_hour) for r in rows]}
         if not exact:
             out["note"] = ("No item matched those words exactly; these are the closest by meaning. Offer the ones that fit, "
                            "or ask what they mean. Don't say we have something these items don't show.")

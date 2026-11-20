@@ -8,6 +8,7 @@ and is always flagged for the owner to review.
 import json
 import re
 from dataclasses import dataclass, field
+from datetime import time
 
 
 @dataclass(frozen=True)
@@ -480,9 +481,13 @@ def check_pool_mix(text: str, c: Choice, items: list[tuple[str, list[str]]], oth
     return _join(out)
 
 
-def notice_text(item_name: str, days: int) -> str:
-    """How to tell a customer about an item's advance notice (owner: never say "24 hours")."""
+def notice_text(item_name: str, days: int, cutoff_hour: int = 3) -> str:
+    """How to tell a customer about an item's advance notice (owner: never say "24 hours";
+    the order, with the pickup name and phone number, must be confirmed by 3 AM on the pickup day)."""
+    cutoff = time(cutoff_hour).strftime("%-I %p")
     if days <= 1:
-        return (f"{item_name} orders need to be placed by the day before pickup. It doesn't have to be a full "
-                "24 hours ahead: ordering today for pickup tomorrow morning is fine, but not for today.")
-    return f"{item_name} orders need to be placed at least {days} days before the pickup day."
+        return (f"{item_name} orders need to be confirmed, with the pickup name and phone number, by {cutoff} on "
+                "the pickup day, when our team starts baking, so they're ordered the day before. It doesn't have to "
+                "be a full 24 hours ahead: ordering today for pickup tomorrow morning is fine.")
+    return (f"{item_name} orders need to be confirmed, with the pickup name and phone number, by {cutoff} "
+            f"{days - 1} day{'s' if days > 2 else ''} before the pickup day.")
