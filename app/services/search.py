@@ -90,8 +90,8 @@ def _keyword_menu(conn: sqlite3.Connection, query: str, limit: int) -> list[sqli
 
 def find_menu_items(conn: sqlite3.Connection, query: str, limit: int = 8,
                     min_score: float = 0.62) -> tuple[list[sqlite3.Row], bool]:
-    """(rows, exact). exact is False when only meaning matches were found, so the caller can
-    say these are the closest items rather than a match."""
+    """(rows, exact). exact is False unless some item matches every word of the query, so the
+    caller can say these are the closest items rather than a match."""
     if not menu.query_terms(query):
         return menu.search_menu(conn, query, limit=limit), True
     keyword = _keyword_menu(conn, query, 20)
@@ -103,7 +103,8 @@ def find_menu_items(conn: sqlite3.Connection, query: str, limit: int = 8,
         return [], True
     marks = ",".join("?" * len(order))
     found = {r["id"]: r for r in conn.execute(f"SELECT * FROM ({menu._ITEMS}) WHERE id IN ({marks})", order)}
-    return [found[i] for i in order if i in found], bool(keyword)
+    # Exact only when an item matches every word: "ice cream" finding "Bavarian Cream" isn't.
+    return [found[i] for i in order if i in found], any(menu.matches_all(r, query) for r in keyword)
 
 
 # --- FAQ --------------------------------------------------------------------------------

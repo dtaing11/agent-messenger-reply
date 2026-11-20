@@ -164,7 +164,7 @@ class MessageProcessor:
                 await self._reply(ctx, "Thanks! I've passed this to our team, and someone will reply here soon.")
             return "done"
 
-        conv_svc.record_message(conn, cid, "customer", text[:4000], msg["mid"])
+        conv_svc.record_message(conn, cid, "customer", conv_svc.customer_text(text[:4000]), msg["mid"])
         if paused or not conv_svc.get_conversation(conn, cid)["bot_enabled"]:
             return "done"  # paused or human handoff: stay silent
         await self._run_ai(ctx, msg["mid"])
@@ -172,10 +172,12 @@ class MessageProcessor:
 
     async def _handle_photos(self, ctx: _Ctx, mid: str, images: list[dict], paused: bool) -> str:
         """Owner's simple version (no image AI): save the photo. While ordering a Special Design
-        Donut it's kept with the order and the assistant carries on; otherwise a person takes over."""
+        Donut it's kept with the cart and the assistant carries on. Once a design order is in, a
+        photo goes with that order and straight to the owners. Anything else goes to a person.
+        Only the first few photos of one message are kept, and the customer is told."""
         conn, cid = ctx.conn, ctx.customer_id
         saved, failed = [], []
-        for seq, a in enumerate(images[:5]):
+        for seq, a in enumerate(images[:photos.MAX_PER_MESSAGE]):
             done = photos.existing(conn, mid, seq)
             if done is None:
                 try:
@@ -186,21 +188,43 @@ class MessageProcessor:
             (saved if done.path else failed).append(done)
         if failed:
             log.warning("could not keep %d photo(s) from customer %s: %s", len(failed), cid, failed[0].error)
+        dropped = max(0, len(images) - photos.MAX_PER_MESSAGE)
+        if dropped:
+            log.warning("customer %s sent %d photos in one message; kept the first %d", cid, len(images),
+                        photos.MAX_PER_MESSAGE)
         ids = [p.id for p in saved]
         conv = conv_svc.get_conversation(conn, cid)
-        for_design = bool(ids) and photos.design_context(conn, cid, conv["session_start_message_id"] or 0)
+        session_start = conv["session_start_message_id"] or 0
+        order = None
+        for_design = bool(ids) and photos.design_in_cart(conn, cid)
+        if ids and not for_design:
+            order = photos.open_design_order(conn, cid, ctx.now)
+            for_design = order is not None or photos.asking_for_design(conn, cid, session_start)
         if for_design:
-            note = photos.history_note(ids)
+            note = photos.history_note(ids, order["id"] if order else None, dropped)
         elif ids:
             note = f"[The customer sent a photo ({', '.join(f'#{i}' for i in ids)}).]"
         else:
             note = "[The customer sent a photo, but it couldn't be saved.]"
         conv_svc.record_message(conn, cid, "customer", note, mid)
+        if order is not None:  # the owners need it even if staff have the chat
+            photos.attach_to_order(conn, cid, order["id"], ids)
+            notify.alert_owners(
+                conn, ctx.settings, "order_photo",
+                f"Town Donut: {notify.customer_label(conn, cid)} sent {len(ids)} more photo{'s' if len(ids) > 1 else ''} "
+                f"for order #{order['id']} (Special Design Donut). It's on this alert and in the portal under Orders.",
+                f"order:{order['id']}:photo:{mid}", order_id=order["id"], now=ctx.now,
+                attachments=[p.path for p in saved])
         if paused or not conv["bot_enabled"]:
             return "done"  # staff have the chat; the photo is in the portal for them
+        too_many = (f"I can only keep {photos.MAX_PER_MESSAGE} photos from one message, so I saved the first "
+                    f"{photos.MAX_PER_MESSAGE}. If the others matter, please send them in a new message.")
         if for_design:
-            photos.attach_to_cart(conn, cid, ids)
+            if order is None:
+                photos.attach_to_cart(conn, cid, ids)
             await self._run_ai(ctx, mid)
+            if dropped and conv_svc.record_message(conn, cid, "assistant", too_many, f"photos-cap:{mid}"):
+                await ctx.responder.send_text(ctx.psid, too_many)
             return "done"
         if await self._resend_saved_reply(ctx, mid):
             return "done"
@@ -208,6 +232,8 @@ class MessageProcessor:
         self._hand_off(ctx, reason, key=f"handoff:{mid}", attachments=[p.path for p in saved])
         reply = ("Thanks for the photo! I've passed it to our team, and someone will reply here soon." if ids else
                  "Sorry, I couldn't open that photo. I've let our team know, and someone will reply here soon.")
+        if dropped and ids:
+            reply += " " + too_many
         conv_svc.record_message(conn, cid, "assistant", reply, f"reply:{mid}")
         await ctx.responder.send_text(ctx.psid, reply)
         return "done"

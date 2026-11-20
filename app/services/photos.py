@@ -2,14 +2,16 @@
 
 The owner chose the simple version: there's no image AI. A photo sent while ordering a
 Special Design Donut is saved, kept with the customer's cart and then their order, and
-shown to the owners (sent with the Messenger alert, and in the portal). A photo with no
-design-donut context goes to a person.
+shown to the owners (sent with the Messenger alert, and in the portal). A photo sent once a
+design order is already in goes with that order, and the owners get it right away. Any other
+photo (a complaint, a question) goes to a person.
 
 Photos are untrusted: they are only fetched from Meta's own CDN hosts, size-capped, and
 kept only if the bytes really are a JPEG, PNG, GIF or WebP image. Nothing reads what's in them.
 """
 
 import hashlib
+import re
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
@@ -19,10 +21,18 @@ import httpx
 
 from app.config import Settings
 from app.services import cart as cart_svc
+from app.timeutil import to_db
 
 # Meta serves Messenger attachments from these domains.
 ALLOWED_HOST_SUFFIXES = (".fbcdn.net", ".fbsbx.com", ".facebook.com")
 MAX_REDIRECTS = 3
+MAX_PER_MESSAGE = 5
+# The customer is asking for a design donut ("a custom birthday donut", "the design I want").
+_DESIGN_TALK = re.compile(r"\b(?:design\w*|custom\w*|decorat\w*|personali[sz]ed|birthday\s+donut|special\s+donut)\b", re.I)
+# Sprinkle asked about the design ("What design would you like?", "send a photo of the design").
+_DESIGN_ASK = re.compile(r"\bdesign\b[^.!?\n]{0,60}\?|\b(?:photo|picture|pic|image)\b[^.!?\n]{0,40}\bdesign\b"
+                         r"|\bdesign\b[^.!?\n]{0,40}\b(?:photo|picture|pic|image)\b", re.I)
+OPEN_STATUSES = ("PENDING_ACCEPTANCE", "ACCEPTED", "PREPARING", "READY")
 
 
 class PhotoError(Exception):
@@ -137,23 +147,54 @@ def record_failure(conn: sqlite3.Connection, customer_id: int, mid: str, seq: in
     return Photo(cur.lastrowid, None, error)
 
 
-def design_context(conn: sqlite3.Connection, customer_id: int, session_start_id: int = 0) -> bool:
-    """Is this customer ordering a Special Design Donut right now? Either one is in their cart,
-    or the last few messages of this session talk about a design."""
-    in_cart = conn.execute(
+def design_in_cart(conn: sqlite3.Connection, customer_id: int) -> bool:
+    return conn.execute(
         """SELECT 1 FROM carts c JOIN cart_items i ON i.cart_id = c.id JOIN menu_items m ON m.id = i.item_id
            WHERE c.customer_id = ? AND c.status = 'active' AND m.custom_rules IS NOT NULL LIMIT 1""",
         (customer_id,),
+    ).fetchone() is not None
+
+
+def open_design_order(conn: sqlite3.Connection, customer_id: int, now) -> sqlite3.Row | None:
+    """The customer's latest design-donut order that's in and not picked up yet."""
+    marks = ",".join("?" * len(OPEN_STATUSES))
+    return conn.execute(
+        f"""SELECT o.* FROM orders o
+            WHERE o.customer_id = ? AND o.status IN ({marks}) AND o.pickup_time > ?
+              AND EXISTS (SELECT 1 FROM order_items oi JOIN menu_items m ON m.id = oi.item_id
+                          WHERE oi.order_id = o.id AND m.custom_rules IS NOT NULL)
+            ORDER BY o.id DESC LIMIT 1""",
+        (customer_id, *OPEN_STATUSES, to_db(now)),
     ).fetchone()
-    if in_cart:
-        return True
+
+
+def asking_for_design(conn: sqlite3.Connection, customer_id: int, session_start_id: int = 0) -> bool:
+    """Did the customer just ask for a design donut? Their latest message (not a photo note)
+    talks about one, or Sprinkle's reply after it asked about the design. Sprinkle's menu list
+    ("Special Design Donut $22.89") or an older mention doesn't count, so a complaint photo
+    isn't taken for a design."""
     rows = conn.execute(
-        """SELECT m.content FROM messages m JOIN conversations v ON v.id = m.conversation_id
+        """SELECT m.role, m.content FROM messages m JOIN conversations v ON v.id = m.conversation_id
            WHERE v.customer_id = ? AND m.id >= ? AND m.role IN ('customer', 'assistant')
-           ORDER BY m.id DESC LIMIT 6""",
+           ORDER BY m.id DESC LIMIT 12""",
         (customer_id, session_start_id),
     ).fetchall()
-    return any("design" in (r["content"] or "").lower() for r in rows)
+    for r in rows:
+        text = r["content"] or ""
+        if r["role"] == "assistant":
+            if _DESIGN_ASK.search(text) and "$" not in text:
+                return True
+            continue
+        if text.startswith("[") and not text.startswith("[button]"):
+            continue  # a photo or system note, not the customer's words
+        return bool(_DESIGN_TALK.search(text))
+    return False
+
+
+def design_context(conn: sqlite3.Connection, customer_id: int, session_start_id: int = 0) -> bool:
+    """Is this customer ordering a Special Design Donut right now? One is in their cart, or
+    they just asked for one."""
+    return design_in_cart(conn, customer_id) or asking_for_design(conn, customer_id, session_start_id)
 
 
 def attach_to_cart(conn: sqlite3.Connection, customer_id: int, photo_ids: list[int]) -> int:
@@ -165,6 +206,17 @@ def attach_to_cart(conn: sqlite3.Connection, customer_id: int, photo_ids: list[i
     return conn.execute(
         f"UPDATE customer_photos SET cart_id = ? WHERE customer_id = ? AND order_id IS NULL AND id IN ({marks})",
         (cart["id"], customer_id, *photo_ids),
+    ).rowcount
+
+
+def attach_to_order(conn: sqlite3.Connection, customer_id: int, order_id: int, photo_ids: list[int]) -> int:
+    """Keep photos sent after the order went in with that order."""
+    if not photo_ids:
+        return 0
+    marks = ",".join("?" * len(photo_ids))
+    return conn.execute(
+        f"UPDATE customer_photos SET order_id = ? WHERE customer_id = ? AND order_id IS NULL AND id IN ({marks})",
+        (order_id, customer_id, *photo_ids),
     ).rowcount
 
 
@@ -183,9 +235,15 @@ def for_customer(conn: sqlite3.Connection, customer_id: int, limit: int = 12) ->
                         (customer_id, limit)).fetchall()
 
 
-def history_note(photo_ids: list[int]) -> str:
-    """What the assistant sees in place of the photo: it can't see images, so it must not guess."""
+def history_note(photo_ids: list[int], order_id: int | None = None, dropped: int = 0) -> str:
+    """What the assistant sees in place of the photo: it can't see images, so it must not guess.
+    Notes in square brackets only ever come from the system: customers' own brackets are
+    replaced (see conversation.customer_text)."""
     ids = ", ".join(f"#{i}" for i in photo_ids)
     what = "a photo" if len(photo_ids) == 1 else f"{len(photo_ids)} photos"
-    return (f"[The customer sent {what} ({ids}). It's saved with their order for our team to see. "
+    where = (f"It's saved with their order #{order_id}, and the owners have it now." if order_id else
+             "It's saved with their order for our team to see.")
+    extra = (f" They sent {dropped} more that couldn't be kept (only {MAX_PER_MESSAGE} per message); "
+             "they've been told to send those in a new message if they matter." if dropped else "")
+    return (f"[The customer sent {what} ({ids}). {where}{extra} "
             "You can't see photos, so don't describe or guess what's in it.]")

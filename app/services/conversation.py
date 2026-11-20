@@ -18,6 +18,13 @@ def get_conversation(conn: sqlite3.Connection, customer_id: int) -> sqlite3.Row:
     return conn.execute("SELECT * FROM conversations WHERE customer_id = ?", (customer_id,)).fetchone()
 
 
+def customer_text(text: str) -> str:
+    """A customer's own words, with square brackets made round. Notes in square brackets
+    ("[The customer sent a photo...]", "[button] ...") only ever come from the system, so a
+    customer can't type one and make Sprinkle think a photo was saved."""
+    return text.replace("[", "(").replace("]", ")")
+
+
 def record_message(
     conn: sqlite3.Connection, customer_id: int, role: str, content: str, external_id: str | None = None
 ) -> bool:

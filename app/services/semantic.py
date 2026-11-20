@@ -7,8 +7,10 @@ stale index can rank a result oddly but can never show a wrong price or a remove
 keeps itself current: each search compares a fingerprint of every document's text with what
 was indexed and re-embeds only what changed (a menu edit in the portal, a new FAQ answer).
 
-The model (about 70 MB) downloads once into the models folder when the worker starts, in the
-background. Until it's ready, or if it can't load, search is keyword-only.
+The model (about 70 MB) downloads once into data/models: when the worker starts (in the
+background), or ahead of time with `python -m app.download_model`. Every tool on the machine
+(the bot, the eval runner, the search check, the tests) shares that one copy. Until it's ready,
+or if it can't load, search is keyword-only.
 """
 
 import hashlib
@@ -20,6 +22,8 @@ from typing import Protocol
 
 log = logging.getLogger(__name__)
 
+# The repo's data/models, wherever the command runs from, so every tool shares one download.
+MODELS_DIR = Path(__file__).resolve().parents[2] / "data" / "models"
 _NS = uuid.UUID("6f1d3c52-6c0e-4c8a-9a51-3b7f4f9b2d10")
 # BGE English models retrieve better when a short query carries this instruction.
 BGE_QUERY_PREFIX = "Represent this sentence for searching relevant passages: "
@@ -168,11 +172,32 @@ def _open_client(settings):
     return QdrantClient(path=str(path))
 
 
+def model_dir(settings) -> Path:
+    return Path(settings.model_cache_path) if settings.model_cache_path else MODELS_DIR
+
+
+def load_model(settings) -> FastEmbedder:
+    """Load the embedding model, downloading it first if it isn't in the models folder yet."""
+    return FastEmbedder(settings.embedding_model, model_dir(settings))
+
+
 def build(settings, embedder: Embedder | None = None, client=None) -> SemanticIndex:
     if embedder is None:
-        cache = settings.model_cache_path or settings.database_path.parent / "models"
-        embedder = FastEmbedder(settings.embedding_model, cache)
+        embedder = load_model(settings)
     return SemanticIndex(embedder, client if client is not None else _open_client(settings))
+
+
+def load_now(settings, in_memory: bool = True) -> SemanticIndex:
+    """Load the model and install an index right away, in this thread (the eval runner and the
+    real-model tests). In memory by default, so it never touches the live bot's index."""
+    client = None
+    if in_memory:
+        from qdrant_client import QdrantClient
+
+        client = QdrantClient(":memory:")
+    index = build(settings, client=client)
+    set_index(index)
+    return index
 
 
 def start(settings, on_ready=None) -> threading.Thread | None:

@@ -280,7 +280,7 @@ def _dispatch(ctx: ToolContext, name: str, a: dict) -> dict:
             return {"items": [], "note": "No matching items on the menu."}
         out = {"items": [_item_json(conn, r, ctx.biz.pickup.notice_cutoff_hour) for r in rows]}
         if not exact:
-            out["note"] = ("No item matched those words exactly; these are the closest by meaning. Offer the ones that fit, "
+            out["note"] = ("No item matched all of those words; these are only the closest items. Offer the ones that fit, "
                            "or ask what they mean. Don't say we have something these items don't show.")
         return out
     if name == "browse_menu":

@@ -20,13 +20,10 @@ DEFAULT_QUERIES = [
 
 
 def main(queries: list[str]) -> None:
-    from qdrant_client import QdrantClient
-
     settings = get_settings()
     conn = connect(settings.database_path)
-    index = semantic.build(settings, client=QdrantClient(":memory:"))
+    index = semantic.load_now(settings)
     search.sync_all(conn, index)
-    semantic.set_index(index)
     menu_names = {r["id"]: r["name"] for r in conn.execute("SELECT id, name FROM menu_items")}
     faq_q = {r["id"]: r["question"] for r in conn.execute("SELECT id, question FROM knowledge_documents")}
     m = settings.semantic_min_score
