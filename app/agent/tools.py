@@ -9,6 +9,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from app.config import Settings
+from app.integrations import messenger
 from app.services import cart as cart_svc
 from app.services import (
     custom_items,
@@ -32,9 +33,9 @@ TOOLS: list[dict] = [
         "name": "browse_menu", "description": "A short overview for menu questions: with no category, the menu's categories and price ranges; with a category (e.g. \"Bubble Tea\"), its items, each with its own price, and same_price. Use search_menu for an item's flavors and add-ons.",
         "parameters": {"type": "object", "properties": {"category": {"type": "string", "maxLength": 60}}}}},
     {"type": "function", "function": {
-        "name": "offer_choices", "description": "Show tap-to-answer buttons under your reply when you ask the customer to pick from a short list (kinds, flavors, yes/no). Up to 13 short options. Write the question in your reply as usual.",
+        "name": "offer_choices", "description": "Show tap-to-answer buttons under your reply when you ask the customer to pick from a short list (kinds, flavors, yes/no). Up to 13 options, each 20 characters or fewer (Messenger cuts longer ones). Write the question in your reply as usual. A tap comes back as the customer's message with that exact text.",
         "parameters": {"type": "object", "properties": {
-            "options": {"type": "array", "items": {"type": "string", "maxLength": 60}, "minItems": 2, "maxItems": 13}},
+            "options": {"type": "array", "items": {"type": "string", "maxLength": 20}, "minItems": 2, "maxItems": 13}},
             "required": ["options"]}}},
     {"type": "function", "function": {
         "name": "search_knowledge", "description": "Look up approved store information: hours, holidays, location, phone, payment, policies, special orders.",
@@ -231,11 +232,14 @@ def _dispatch(ctx: ToolContext, name: str, a: dict) -> dict:
     if name == "offer_choices":
         opts = []
         for o in a.get("options") or []:
-            o = " ".join(str(o).split())[:60]
+            o = " ".join(str(o).replace("|", "/").split())
             if o and o.lower() not in (x.lower() for x in opts):
                 opts.append(o)
         if len(opts) < 2:
             raise ValueError("Give at least 2 different options.")
+        if long := [o for o in opts if len(o) > messenger.QUICK_REPLY_TITLE_MAX]:
+            raise ValueError(f"Each option must be {messenger.QUICK_REPLY_TITLE_MAX} characters or fewer, or Messenger cuts it off. "
+                             f"Too long: {', '.join(repr(o) for o in long)}. Shorten them and call offer_choices again.")
         ctx.quick_replies = tuple(opts[:13])
         return {"ok": True, "note": "Buttons will appear under your reply. Still ask the question in your reply."}
     if name == "search_knowledge":

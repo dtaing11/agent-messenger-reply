@@ -39,7 +39,8 @@ class Settings(BaseSettings):
     max_tool_rounds: int = Field(6, ge=1, le=20)
     ai_temperature: float = Field(0.2, ge=0, le=1.5)
     ai_timeout_seconds: float = Field(25.0, ge=5, le=120)
-    ai_max_tokens: int = Field(600, ge=100, le=4000)
+    # Room for models that think before answering; too low and replies come back empty.
+    ai_max_tokens: int = Field(1500, ge=100, le=8000)
     # Ask OpenRouter to route only to providers that don't train on prompts.
     ai_deny_data_collection: bool = True
     ai_history_messages: int = Field(16, ge=2, le=60)
@@ -62,6 +63,9 @@ class Settings(BaseSettings):
     customer_can_cancel_accepted: bool = False
     require_customer_phone: bool = True
     pickup_check_after_minutes: int = Field(30, ge=0, le=720)  # 0 = don't ask owners
+    # Where owner alerts go. "messenger": owners' linked Facebook accounts, with a text to the owner
+    # phones as the backup whenever no linked owner can be reached on Messenger (Meta's 24-hour rule).
+    owner_alert_channel: Literal["messenger", "sms", "both"] = "messenger"
     # Store-local hour to text the owners the day's orders that were placed on an earlier day (-1 = off).
     owner_reminder_hour: int = Field(3, ge=-1, le=23)
     large_order_threshold_cents: int = Field(10000, ge=0)

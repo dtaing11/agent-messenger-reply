@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}Owner alerts{% endblock %}
+{% block content %}
+<h2>Owner alerts</h2>
+<p class="muted">New orders, pickup checks, 3 AM reminders and hand-offs go to the owners here. Owners can tap
+  Accept or Decline on an alert, or reply with YES 12, NO 12, READY 12, PICKED 12, NOSHOW 12, ORDERS, PAUSE, RESUME or HELP.</p>
+{% if saved %}<div class="result good" role="status"><p>✓ {{ saved }}</p></div>{% endif %}
+
+{% if sms_failures %}
+<div class="result bad" role="alert">
+  <p>✗ The text backup isn't getting through: {{ sms_failures|length }} text{{ 's' if sms_failures|length != 1 }} failed in the last 24 hours.
+    Latest: {{ sms_failures[0].last_error or 'unknown error' }}</p>
+  <p class="small">Texts only reach owners once Twilio registration (A2P 10DLC or toll-free verification) is approved.
+    Until then, keep at least one owner's Messenger alerts on (tap 👍 on the daily check-in).</p>
+</div>
+{% endif %}
+{% if not reachable %}
+<div class="result bad" role="alert"><p>✗ No owner can be reached on Messenger right now
+  ({{ 'nobody is linked yet' if not accounts else "every owner's 24-hour window is closed" }}).
+  Alerts go to the owner phones by text{{ ' (Twilio is not set up, so they wait)' if not twilio_ready }}.
+  {% if accounts %}Any owner can send the Page a message (even 👍) to turn their alerts back on.{% endif %}</p></div>
+{% endif %}
+
+<article>
+  <header><strong>Where alerts go</strong></header>
+  <form hx-post="/admin/owners/channel" hx-target="#channel-result" class="row-form">
+    <select name="owner_alert_channel" aria-label="Where alerts go">
+      <option value="messenger" {% if s.owner_alert_channel == 'messenger' %}selected{% endif %}>Messenger, with a text as the backup</option>
+      <option value="both" {% if s.owner_alert_channel == 'both' %}selected{% endif %}>Messenger and text, always both</option>
+      <option value="sms" {% if s.owner_alert_channel == 'sms' %}selected{% endif %}>Text only</option>
+    </select>
+    <button type="submit">Save</button>
+  </form>
+  <div id="channel-result"></div>
+  <p class="small muted">"Messenger, with a text as the backup": the owner phones (Integrations → Twilio) get a text only
+    when no linked owner can be reached on Messenger.</p>
+</article>
+
+<article>
+  <header><strong>Owners on Messenger</strong></header>
+  {% if accounts %}
+  <div class="overflow-auto">
+  <table class="striped">
+    <thead><tr><th>Owner</th><th>Linked</th><th>Last message to the Page</th><th>Alerts</th><th></th></tr></thead>
+    <tbody>{% for a in accounts %}
+      <tr>
+        <td>{{ a.label }} <small class="muted">…{{ a.psid[-4:] }}</small></td>
+        <td>{{ a.linked_at|localtime }}</td>
+        <td>{{ a.last_message_at|localtime if a.last_message_at else 'never' }}</td>
+        <td>{% if not a.active %}<span class="badge">removed</span>
+          {% elif a.open %}<span class="badge healthy">on</span> <small class="muted">until {{ a.closes|localtime }}</small>
+          {% else %}<span class="badge down">paused</span> <small class="muted">waiting for them to message the Page</small>{% endif %}</td>
+        <td>{% if a.active %}
+          <form hx-post="/admin/owners/{{ a.id }}/test" hx-target="#owner-result" class="inline"><button type="submit" class="secondary outline small">Send test</button></form>
+          <form hx-post="/admin/owners/{{ a.id }}/remove" hx-target="#owner-result" hx-confirm="Stop sending alerts to {{ a.label }}?" class="inline"><button type="submit" class="secondary outline small">Remove</button></form>
+        {% endif %}</td>
+      </tr>
+    {% endfor %}</tbody>
+  </table>
+  </div>
+  {% else %}<p class="muted">No owner accounts linked yet.</p>{% endif %}
+  <div id="owner-result"></div>
+
+  <h4>Link an owner's Facebook account</h4>
+  <form hx-post="/admin/owners/link-code" hx-target="#code-result" class="row-form">
+    <input name="label" placeholder="Owner's name, e.g. Dina" maxlength="40" required aria-label="Owner's name">
+    <button type="submit">Make a link code</button>
+  </form>
+  <div id="code-result"></div>
+  <ol class="small muted">
+    <li>Make a code here. It works once, for 15 minutes.</li>
+    <li>From the owner's own Facebook account, send the code to the store's Page in Messenger, like <code>LINK 123456</code>.</li>
+    <li>They get a "You're linked" reply, and the other owners get an FYI.</li>
+  </ol>
+  <p class="small muted">While the Meta app is in Development mode, the Page can only message people who have a role on the app.
+    Add each owner under App roles → Roles in the Meta developer dashboard (Tester is enough) and have them accept the invite.</p>
+  <p class="small muted">Facebook lets the Page message someone only within 24 hours of their last message to it, and Meta retired the
+    message tags that used to allow updates after that. So each owner gets a daily check-in with a 👍 button. Tapping it, or replying to any alert,
+    keeps alerts on for another 24 hours. Alerts that can't be delivered wait and arrive the next time that owner messages the Page.</p>
+</article>
+
+<article>
+  <header><strong>Recent alerts</strong></header>
+  {% if recent %}
+  <div class="overflow-auto">
+  <table class="striped">
+    <thead><tr><th>When</th><th>What</th><th>To</th><th>Status</th></tr></thead>
+    <tbody>{% for n in recent %}
+      <tr>
+        <td>{{ n.created_at|localtime }}</td>
+        <td>{{ n.type.replace('_', ' ') }}{% if n.order_id %} #{{ n.order_id }}{% endif %}</td>
+        <td>{% if n.channel == 'messenger' %}Messenger: {{ labels.get(n.recipient, '…' ~ n.recipient[-4:]) }}{% else %}Text: {{ n.recipient|phone }}{% endif %}</td>
+        <td>{% if n.status in ('sent', 'delivered') %}<span class="badge healthy">{{ n.status }}</span>
+          {% elif n.status == 'failed' and (n.last_error or '').startswith('window_closed') %}<span class="badge degraded">waiting</span>
+            <small class="muted">sent when they next message the Page</small>
+          {% elif n.status == 'failed' %}<span class="badge down">failed</span> <small>{{ n.last_error }}</small>
+          {% else %}<span class="badge">{{ n.status }}</span>{% if n.last_error %} <small class="muted">{{ n.last_error }}</small>{% endif %}{% endif %}</td>
+      </tr>
+    {% endfor %}</tbody>
+  </table>
+  </div>
+  {% else %}<p class="muted">No alerts yet.</p>{% endif %}
+</article>
+{% endblock %}

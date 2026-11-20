@@ -1,26 +1,57 @@
 """Outgoing notifications: owner SMS rows (sent by the notification worker) and
 customer Messenger updates (queued as internal events for the message worker)."""
 
+import json
 import sqlite3
 from datetime import datetime, timedelta
 
 from app.agent.state_machine import OrderStatus
 from app.config import Settings
+from app.services import owner_accounts
 from app.services.business import BusinessInfo
-from app.timeutil import from_db, local
+from app.timeutil import from_db, local, utcnow
 from app.workers import queue
 
 MESSENGER_WINDOW = timedelta(hours=24)
 
 
+def _digits(value: str) -> str:
+    return "".join(ch for ch in value if ch.isdigit())[-10:]
+
+
+def owner_recipients(conn: sqlite3.Connection, settings: Settings, now: datetime | None = None,
+                     exclude: str | None = None, every_channel: bool = False) -> list[tuple[str, str]]:
+    """(channel, address) for every owner who should get an alert right now.
+
+    messenger: linked owner accounts; the owner phones get a text too when none of them can be
+    reached on Messenger (nobody linked, or every 24-hour window closed). both: always both.
+    sms: owner phones only. `exclude` is the owner who caused the alert (phone or PSID).
+    every_channel: every linked account and every phone (for security notices)."""
+    now = now or utcnow()
+    mode = "both" if every_channel else settings.owner_alert_channel
+    fb = owner_accounts.active(conn) if mode in ("messenger", "both") else []
+    out = [("messenger", a["psid"]) for a in fb]
+    if mode in ("sms", "both") or not any(owner_accounts.window_open(a, now) for a in fb):
+        out += [("sms", p) for p in settings.owner_phone_numbers]
+    if exclude:
+        out = [(c, a) for c, a in out
+               if not (a == exclude or (c == "sms" and _digits(exclude) and _digits(a) == _digits(exclude)))]
+    return out
+
+
 def alert_owners(conn: sqlite3.Connection, settings: Settings, kind: str, body: str, key: str,
-                 order_id: int | None = None) -> int:
-    """Queue one SMS per owner phone. `key` makes it idempotent across retries."""
+                 order_id: int | None = None, buttons: list[list[str]] | None = None, exclude: str | None = None,
+                 now: datetime | None = None, every_channel: bool = False) -> int:
+    """Queue one alert per owner (see owner_recipients). `key` makes it idempotent across
+    retries. `buttons` ([title, command] pairs) become tap-to-reply buttons on Messenger."""
     n = 0
-    for phone in settings.owner_phone_numbers:
+    for channel, to in owner_recipients(conn, settings, now, exclude, every_channel):
+        fb = channel == "messenger"
         n += conn.execute(
-            "INSERT OR IGNORE INTO notifications (order_id, type, recipient, body, idempotency_key) VALUES (?, ?, ?, ?, ?)",
-            (order_id, kind, phone, body[:1500], f"{key}:{phone}"),
+            """INSERT OR IGNORE INTO notifications (order_id, type, recipient, body, idempotency_key, channel, buttons)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (order_id, kind, to, body if fb else body[:1500], f"{key}:fb:{to}" if fb else f"{key}:{to}", channel,
+             json.dumps(buttons[:13]) if fb and buttons else None),
         ).rowcount
     return n
 

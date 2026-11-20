@@ -218,7 +218,7 @@ def test_notification_sender_retries_and_gives_up(conn, customer_id, biz, settin
 
 def test_sender_waits_until_twilio_configured(conn, customer_id, biz, settings):
     place_order(conn, customer_id, biz, settings)
-    assert asyncio.run(notifications.send_due(conn, settings, NOW)) == {"sent": 0, "retry": 0, "failed": 0}
+    assert asyncio.run(notifications.send_due(conn, settings, NOW)) == {"sent": 0, "retry": 0, "failed": 0, "held": 0}
     assert conn.execute("SELECT MAX(attempts) FROM notifications").fetchone()[0] == 0
 
 

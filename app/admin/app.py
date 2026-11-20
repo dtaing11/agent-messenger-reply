@@ -13,7 +13,8 @@ import shutil
 import sqlite3
 from contextlib import asynccontextmanager
 from pathlib import Path
-from urllib.parse import quote
+from datetime import timedelta
+from urllib.parse import quote, urlencode
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -32,7 +33,7 @@ from app.integrations import checks
 from app.agent.state_machine import OrderStatus
 from app.integrations import twilio
 from app.services import conversation as conv_svc
-from app.services import customers, menu_admin, owner_commands
+from app.services import customers, menu_admin, owner_accounts, owner_commands
 from app.services.business import load_business
 from app.services.phone import display as phone_display
 from app.services.pricing import money
@@ -602,6 +603,72 @@ def create_admin_app() -> FastAPI:
         if request.headers.get("hx-request"):
             return Response(status_code=204, headers={"HX-Redirect": target})
         return RedirectResponse(target, status_code=303)
+
+    # ---- owner alerts (Messenger / text)
+    @app.get("/admin/owners")
+    def owners_page(request: Request, conn=Depends(get_db), user=Depends(current_user), s=Depends(runtime_settings)):
+        now = utcnow()
+        accounts = [{**dict(a), "open": owner_accounts.window_open(a, now),
+                     "closes": to_db(owner_accounts.window_closes_at(a)) if a["last_message_at"] else None}
+                    for a in owner_accounts.all_accounts(conn)]
+        recent = conn.execute("SELECT * FROM notifications ORDER BY id DESC LIMIT 25").fetchall()
+        sms_failures = conn.execute(
+            """SELECT * FROM notifications WHERE channel = 'sms' AND status = 'failed' AND created_at >= ?
+               ORDER BY id DESC""", (to_db(now - timedelta(hours=24)),)).fetchall()
+        return page(request, "owners.html", user, s=s, accounts=accounts, recent=recent, sms_failures=sms_failures,
+                    labels={a["psid"]: a["label"] for a in accounts},
+                    reachable=s.owner_alert_channel == "sms" or any(a["open"] and a["active"] for a in accounts),
+                    twilio_ready=twilio.configured(s), saved=request.query_params.get("saved"))
+
+    def _back_to_owners(request: Request, saved: str):
+        target = "/admin/owners?" + urlencode({"saved": saved})
+        if request.headers.get("hx-request"):
+            return Response(status_code=204, headers={"HX-Redirect": target})
+        return RedirectResponse(target, status_code=303)
+
+    @app.post("/admin/owners/channel")
+    async def owners_channel(request: Request, conn=Depends(get_db), user=Depends(admin_user)):
+        value = str((await request.form()).get("owner_alert_channel", ""))
+        try:
+            runtime.set_values(conn, {"owner_alert_channel": value}, user.username)
+        except ValidationError:
+            return result(request, False, "Pick one of the options.")
+        auth.audit(conn, user.username, "settings.save.owner_alert_channel", value, "ok")
+        return _back_to_owners(request, "Saved. It applies to the next alert.")
+
+    @app.post("/admin/owners/link-code")
+    async def owners_link_code(request: Request, conn=Depends(get_db), user=Depends(admin_user)):
+        label = str((await request.form()).get("label", ""))
+        try:
+            code = owner_accounts.create_link_code(conn, label, user.username, utcnow())
+        except owner_accounts.LinkError as exc:
+            return result(request, False, str(exc))
+        auth.audit(conn, user.username, "owner.link_code", label.strip()[:40], "ok")  # never the code itself
+        return result(request, True, f"From {label.strip()}'s own Facebook account, send the Page this message within "
+                                     f"15 minutes:  LINK {code}")
+
+    @app.post("/admin/owners/{account_id}/remove")
+    async def owners_remove(account_id: int, request: Request, conn=Depends(get_db), user=Depends(admin_user)):
+        owner_accounts.remove(conn, account_id)
+        auth.audit(conn, user.username, "owner.remove", str(account_id), "ok")
+        return _back_to_owners(request, "Removed. That account no longer gets alerts or can send commands.")
+
+    @app.post("/admin/owners/{account_id}/test")
+    async def owners_test(account_id: int, request: Request, conn=Depends(get_db), user=Depends(admin_user)):
+        acc = conn.execute("SELECT * FROM owner_accounts WHERE id = ? AND active = 1", (account_id,)).fetchone()
+        if acc is None:
+            return result(request, False, "That owner isn't linked.")
+        if not owner_accounts.window_open(acc, utcnow()):
+            return result(request, False, f"{acc['label']} hasn't messaged the Page in 24 hours, so Facebook won't let the Page "
+                                          "message them. Ask them to send the Page any message, then try again.")
+        conn.execute(
+            """INSERT INTO notifications (type, recipient, body, idempotency_key, channel)
+               VALUES ('owner_test', ?, ?, ?, 'messenger')""",
+            (acc["psid"], "Town Donut bot: test alert. Order alerts will come here.", f"owner_test:{acc['id']}:{secrets.token_hex(4)}"),
+        )
+        auth.audit(conn, user.username, "owner.test", str(account_id), "ok")
+        return result(request, True, f"Test alert queued for {acc['label']}. It should arrive within a few seconds; "
+                                     "check Recent alerts below after a reload.")
 
     # ---- business
     @app.get("/admin/business")

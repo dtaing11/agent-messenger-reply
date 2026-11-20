@@ -43,6 +43,7 @@ PLAIN_FIELDS = (
     "require_customer_phone",
     "pickup_check_after_minutes",
     "owner_reminder_hour",
+    "owner_alert_channel",
     "pause_bot_on_staff_reply",
 )
 

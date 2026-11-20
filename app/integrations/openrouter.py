@@ -62,9 +62,12 @@ async def chat(settings: Settings, messages: list[dict], tools: list[dict] | Non
     if "error" in data:
         raise LLMError(f"{model}: {data['error'].get('message', 'error')}"[:300])
     try:
-        return data["choices"][0]["message"]
-    except (KeyError, IndexError) as exc:
+        choice = data["choices"][0]
+        msg = dict(choice["message"])
+    except (KeyError, IndexError, TypeError) as exc:
         raise LLMError(f"{model}: malformed response") from exc
+    msg["finish_reason"] = choice.get("finish_reason")  # for logs only; never sent back to the model
+    return msg
 
 
 async def chat_with_fallback(settings: Settings, messages: list[dict], tools: list[dict] | None = None,

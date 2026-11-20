@@ -40,6 +40,8 @@ order updates on Messenger, a menu editor, and customer profiles with pickup his
 | 3 AM text to the owners on the pickup day listing orders placed on an earlier day (`OWNER_REMINDER_HOUR`) | done |
 | Fresh start after 12 quiet hours: the AI sees only the new messages; an unfinished cart is set aside and offered back once (`SESSION_IDLE_HOURS`) | done |
 | Short menu answers on phones: per-item prices from `browse_menu`, one level at a time, tap-to-pick quick replies | done |
+| Owner alerts on Facebook Messenger: owners link their account with a one-time code (portal → Owner alerts), tap Accept/Decline, Picked up/No-show, or reply with the text commands; texts are the backup | done |
+| Meta's 24-hour rule for owner alerts: daily 👍 check-in sent inside the window; undeliverable alerts are held and sent when the owner next writes, and texted if no owner can be reached | done |
 | Menu editor in the portal (prices, items, add-ons, categories, flavors) | done |
 | Developer portal | done (see below) |
 

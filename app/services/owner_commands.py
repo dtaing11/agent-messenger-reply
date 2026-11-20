@@ -15,13 +15,13 @@ record: the customer is never told, and the assistant never sees it.
 import json
 import re
 import sqlite3
+from dataclasses import dataclass
 from datetime import datetime, time, timedelta
 
 from app.agent.state_machine import InvalidTransition, OrderStatus, can_transition
 from app.config import Settings
 from app.database.connection import transaction
 from app.integrations.messenger import split_message
-from app.integrations.twilio import digits
 from app.services import customers, notify
 from app.services import order as order_svc
 from app.services.business import BusinessInfo
@@ -51,6 +51,26 @@ DONE_WORDS = {
 }
 
 
+@dataclass(frozen=True)
+class OwnerSender:
+    """Who sent an owner command: an owner phone (SMS) or a linked Messenger account."""
+    channel: str  # "sms" | "messenger" | "portal"
+    address: str  # E.164 phone, or PSID
+    label: str = ""
+
+    @classmethod
+    def phone(cls, number: str) -> "OwnerSender":
+        return cls("sms", number)
+
+    @property
+    def actor(self) -> str:
+        return f"owner_sms:{self.address[-4:]}" if self.channel == "sms" else f"owner_fb:{self.label or self.address[-4:]}"
+
+    @property
+    def who(self) -> str:
+        return f"the phone ending {self.address[-4:]}" if self.channel == "sms" else f"{self.label or 'an owner'} on Messenger"
+
+
 def _open_orders(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     marks = ",".join("?" * len(OPEN))
     return conn.execute(f"SELECT * FROM orders WHERE status IN ({marks}) ORDER BY pickup_time", [str(s) for s in OPEN]).fetchall()
@@ -71,9 +91,12 @@ def _list_orders(conn: sqlite3.Connection, biz: BusinessInfo) -> str:
 
 
 def apply_status(conn: sqlite3.Connection, settings: Settings, biz: BusinessInfo, order_id: int, target: OrderStatus,
-                 actor: str, now: datetime, from_phone: str | None = None) -> tuple[bool, str]:
+                 actor: str, now: datetime, from_phone: str | None = None,
+                 sender: OwnerSender | None = None) -> tuple[bool, str]:
     """Change an order's status for an owner, tell the customer when that applies, and let the
-    other owner phones know. Returns (ok, message for the owner)."""
+    other owners know. Returns (ok, message for the owner)."""
+    if sender is None and from_phone:
+        sender = OwnerSender.phone(from_phone)
     try:
         order = order_svc.transition_order(conn, order_id, target, actor=actor)
     except InvalidTransition as exc:
@@ -96,15 +119,11 @@ def apply_status(conn: sqlite3.Connection, settings: Settings, biz: BusinessInfo
             reply += (" The customer last wrote over 24 hours ago, so Messenger won't let us message them automatically."
                       + (f" Their phone: {phone}." if phone else ""))
 
-    # Keep the other owner phones in the loop, so two people don't act on the same order.
-    who = f"the phone ending {from_phone[-4:]}" if from_phone else "the portal"
-    for p in settings.owner_phone_numbers:
-        if from_phone and digits(p) == digits(from_phone):
-            continue
-        conn.execute(
-            "INSERT OR IGNORE INTO notifications (order_id, type, recipient, body, idempotency_key) VALUES (?, 'owner_fyi', ?, ?, ?)",
-            (order_id, p, f"FYI: order #{order_id} was {DONE_WORDS[target]} from {who}.", f"order:{order_id}:{target}:fyi:{p}"),
-        )
+    # Keep the other owners in the loop, so two people don't act on the same order.
+    who = sender.who if sender else "the portal"
+    notify.alert_owners(conn, settings, "owner_fyi", f"FYI: order #{order_id} was {DONE_WORDS[target]} by {who}.",
+                        f"order:{order_id}:{target}:fyi", order_id=order_id,
+                        exclude=sender.address if sender else None, now=now)
     return True, reply
 
 
@@ -114,25 +133,29 @@ def _parse(body: str) -> list[str]:
     return re.findall(r"[A-Z]+|\d+", text)
 
 
-def handle(conn: sqlite3.Connection, settings: Settings, biz: BusinessInfo, from_phone: str, body: str,
+def handle(conn: sqlite3.Connection, settings: Settings, biz: BusinessInfo, sender: str | OwnerSender, body: str,
            now: datetime) -> str:
-    """Apply one owner text command and return the SMS reply."""
+    """Apply one owner command (a text, or a Messenger message from a linked owner) and return the reply."""
+    if isinstance(sender, str):
+        sender = OwnerSender.phone(sender)
     words = _parse(body)
     if not words:
         return HELP
     cmd = words[0]
     if cmd in ("HELP", "COMMANDS", "MENU"):
         return HELP
+    if cmd == "KEEPALIVE":
+        return "Thanks! Order alerts stay on here for another 24 hours."
     if cmd in ("ORDERS", "LIST", "OPEN"):
         return _list_orders(conn, biz)
     if cmd == "PAUSE":
         # Not STOP/START: those are carrier opt-out keywords, and Twilio would stop texting this phone.
-        runtime.set_values(conn, {"bot_mode": "paused"}, f"sms:{from_phone[-4:]}")
+        runtime.set_values(conn, {"bot_mode": "paused"}, sender.actor)
         return "Bot paused. Messages are saved, but customers get no automatic replies. Text RESUME to turn it back on."
     if cmd in ("RESUME", "LIVE"):
         if not settings.meta_app_secret.get_secret_value():
             return "Can't turn the bot on yet: add the Meta App secret in the portal first."
-        runtime.set_values(conn, {"bot_mode": "live"}, f"sms:{from_phone[-4:]}")
+        runtime.set_values(conn, {"bot_mode": "live"}, sender.actor)
         return "Bot is live and replying to customers again."
 
     target = ACTIONS.get(cmd)
@@ -147,7 +170,7 @@ def handle(conn: sqlite3.Connection, settings: Settings, biz: BusinessInfo, from
             return (f"Which order? Reply {cmd} and the order number, e.g. {cmd} 12." if fits
                     else f"No order can be {DONE_WORDS[target]} right now.")
         order_id = fits[0]["id"]
-    _, reply = apply_status(conn, settings, biz, order_id, target, f"owner_sms:{from_phone[-4:]}", now, from_phone)
+    _, reply = apply_status(conn, settings, biz, order_id, target, sender.actor, now, sender=sender)
     return reply
 
 
@@ -172,7 +195,8 @@ def queue_pickup_checks(conn: sqlite3.Connection, settings: Settings, biz: Busin
         if conn.execute("UPDATE orders SET pickup_check_sent_at = ? WHERE id = ? AND pickup_check_sent_at IS NULL",
                         (to_db(now), o["id"])).rowcount:
             notify.alert_owners(conn, settings, "pickup_check", pickup_check_sms(o, biz), f"order:{o['id']}:pickup_check",
-                                order_id=o["id"])
+                                order_id=o["id"], now=now,
+                                buttons=[[f"Picked up #{o['id']}", f"PICKED {o['id']}"], [f"No-show #{o['id']}", f"NOSHOW {o['id']}"]])
             asked.append(o["id"])
     return asked
 
@@ -210,7 +234,7 @@ def queue_day_reminders(conn: sqlite3.Connection, settings: Settings, biz: Busin
     """From `owner_reminder_hour` (3 AM) on the pickup day, text every owner phone the accepted
     orders for today that were placed on an earlier day, once. Runs late if the computer was off."""
     hour = settings.owner_reminder_hour
-    if hour < 0 or not settings.owner_phone_numbers:
+    if hour < 0 or not notify.owner_recipients(conn, settings, now):
         return []
     now_local = local(now, biz.timezone)
     if now_local.time() < time(hour):
@@ -235,5 +259,5 @@ def queue_day_reminders(conn: sqlite3.Connection, settings: Settings, biz: Busin
             raise RuntimeError("day reminder raced with another worker")  # rolled back; next pass retries
         key = f"day_reminder:{now_local:%Y-%m-%d}:{ids[0]}-{ids[-1]}"
         for i, body in enumerate(texts, 1):
-            notify.alert_owners(conn, settings, "day_reminder", body, f"{key}:{i}")
+            notify.alert_owners(conn, settings, "day_reminder", body, f"{key}:{i}", now=now)
     return ids

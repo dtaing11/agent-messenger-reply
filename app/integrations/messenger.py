@@ -7,6 +7,7 @@ from app.config import Settings
 POSTBACK_CONFIRM = "CONFIRM_ORDER:"
 POSTBACK_MODIFY = "MODIFY_ORDER"
 PICK = "PICK:"  # quick-reply option chosen by tapping; the worker treats it as the customer's text
+OWNER_CMD = "OWNER:"  # button on an owner alert, e.g. "OWNER:YES 12"
 QUICK_REPLY_TITLE_MAX = 20  # Messenger's limit for a quick-reply button title
 
 
@@ -75,16 +76,17 @@ class MessengerClient:
             result = await self._send(payload)
         return result
 
-    async def send_choices(self, psid: str, text: str, options: list[str] | tuple[str, ...]) -> dict:
-        """Reply text with tap-to-answer buttons (up to 13). The button shows a short title; the
+    async def send_choices(self, psid: str, text: str, options: list[str] | tuple[str, ...],
+                           messaging_type: str = "RESPONSE", payloads: list[str] | None = None) -> dict:
+        """Text with tap-to-answer buttons (up to 13). The button shows a short title; the
         payload carries the full option, which the worker reads as if the customer typed it."""
         *head, last = split_message(text)
         for part in head:
-            await self._send({"recipient": {"id": psid}, "messaging_type": "RESPONSE", "message": {"text": part}})
+            await self._send({"recipient": {"id": psid}, "messaging_type": messaging_type, "message": {"text": part}})
         return await self._send({
             "recipient": {"id": psid},
-            "messaging_type": "RESPONSE",
-            "message": {"text": last, "quick_replies": quick_replies(options)},
+            "messaging_type": messaging_type,
+            "message": {"text": last, "quick_replies": quick_replies(options, payloads)},
         })
 
     async def send_update(self, psid: str, text: str) -> dict:
@@ -111,9 +113,10 @@ class MessengerClient:
         })
 
 
-def quick_replies(options: list[str] | tuple[str, ...]) -> list[dict]:
+def quick_replies(options: list[str] | tuple[str, ...], payloads: list[str] | None = None) -> list[dict]:
     out = []
-    for o in list(options)[:13]:
+    for i, o in enumerate(list(options)[:13]):
         title = o if len(o) <= QUICK_REPLY_TITLE_MAX else o[: QUICK_REPLY_TITLE_MAX - 1].rstrip() + "…"
-        out.append({"content_type": "text", "title": title, "payload": PICK + o[:900]})
+        payload = payloads[i] if payloads else PICK + o
+        out.append({"content_type": "text", "title": title, "payload": payload[:900]})
     return out

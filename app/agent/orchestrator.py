@@ -28,6 +28,28 @@ LLM = Callable[[Settings, list[dict], list[dict] | None], Awaitable[dict]]
 
 TOO_MANY_STEPS = "Sorry, I got a bit mixed up there. I've asked someone from our team to help, and they'll reply here soon."
 HANDOFF_DEFAULT = "Thanks! I've passed this to our team, and someone will reply here soon."
+NOT_UNDERSTOOD = "Sorry, could you say that another way?"
+EMPTY_NUDGE = ("Your last reply was empty. Answer the customer's latest message now: write a short reply, or call a tool. "
+               "If they tapped one of your buttons, their message is that button's text; treat it as their answer.")
+# Saved with an assistant reply in history so the model knows which buttons the customer could tap.
+BUTTONS_NOTE = "[Buttons shown: "
+
+
+def with_buttons_note(text: str, options: tuple[str, ...] | list[str]) -> str:
+    return f"{text}\n{BUTTONS_NOTE}{' | '.join(options)}]" if options else text
+
+
+def split_buttons_note(content: str) -> tuple[str, list[str]]:
+    """(text to send, button options) from a saved assistant reply."""
+    head, sep, tail = content.rpartition("\n" + BUTTONS_NOTE)
+    if not sep or not tail.endswith("]"):
+        return content, []
+    return head, [o for o in tail[:-1].split(" | ") if o]
+
+
+def _strip_notes(text: str) -> str:
+    """The model sometimes copies the history note into its reply; customers must never see it."""
+    return "\n".join(l for l in text.splitlines() if not l.strip().startswith(BUTTONS_NOTE)).strip()
 
 
 @dataclass
@@ -96,6 +118,7 @@ async def run_agent(
         {"role": "system", "content": _cart_note(ctx)},
         *_history(conn, customer_id, settings.ai_history_messages),
     ]
+    nudged = False
     for _ in range(settings.max_tool_rounds):
         try:
             msg = await llm(settings, messages, tools.TOOLS)
@@ -103,7 +126,15 @@ async def run_agent(
             log.warning("LLM failed: %s", exc)
             return AgentResult(error=str(exc), tools_used=tuple(ctx.log))
         calls = msg.get("tool_calls") or []
-        content = (msg.get("content") or "").strip()
+        content = _strip_notes(msg.get("content") or "")
+        if not calls and not content and not nudged and ctx.summary is None and not ctx.handoff_reason:
+            # An empty answer (seen after a tapped button; often the token limit spent on reasoning):
+            # ask once more instead of telling the customer we didn't understand.
+            log.warning("empty LLM reply for customer %s (finish_reason=%s); asking again",
+                        customer_id, msg.get("finish_reason"))
+            nudged = True
+            messages.append({"role": "system", "content": EMPTY_NUDGE})
+            continue
         if not calls:
             return _finish(ctx, content)
         messages.append({"role": "assistant", "content": msg.get("content") or "", "tool_calls": calls})
@@ -124,7 +155,7 @@ def _finish(ctx: tools.ToolContext, content: str) -> AgentResult:
     if ctx.handoff_reason and not text:
         text = HANDOFF_DEFAULT
     if text is None and ctx.summary is None:
-        text = "Sorry, could you say that another way?"
+        text = NOT_UNDERSTOOD
     # Buttons only make sense under a question; a summary brings its own, and a handoff ends the chat.
     quick = ctx.quick_replies if text and ctx.summary is None and not ctx.handoff_reason else ()
     return AgentResult(text=text, summary=ctx.summary, handoff_reason=ctx.handoff_reason, tools_used=tuple(ctx.log),

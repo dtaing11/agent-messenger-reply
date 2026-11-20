@@ -11,19 +11,26 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
 
-from app.agent.orchestrator import AgentResult, ai_configured, run_agent
+from app.agent.orchestrator import (
+    AgentResult,
+    ai_configured,
+    run_agent,
+    split_buttons_note,
+    with_buttons_note,
+)
 from app.agent.state_machine import ConversationState, OrderStatus
 from app.config import Settings, get_settings
 from app.database.bootstrap import prepare
 from app.database.connection import connect
 from app.integrations.messenger import (
+    OWNER_CMD,
     PICK,
     POSTBACK_CONFIRM,
     POSTBACK_MODIFY,
     MessengerClient,
 )
 from app.services import conversation as conv_svc
-from app.services import notify, owner_commands, sessions
+from app.services import notify, owner_accounts, owner_commands, sessions
 from app.services import order as order_svc
 from app.services.business import BusinessInfo, load_business
 from app.settings.runtime import effective_settings, set_marker
@@ -99,6 +106,10 @@ class MessageProcessor:
         Must be safe to re-run after a crash or a failed send (idempotent)."""
         settings = self.snapshot(conn)
         p = event.payload
+        if event.event_type in ("message", "postback", "echo"):
+            owner_status = await self._handle_owner(conn, settings, event, now)
+            if owner_status:
+                return owner_status
         customer = conv_svc.get_or_create_customer(conn, p["page_id"], p["psid"])
         ctx = _Ctx(conn, settings, self._responder_factory(settings), customer["id"], p["psid"], now)
 
@@ -143,6 +154,56 @@ class MessageProcessor:
         await self._deliver(ctx, msg["mid"], result)
         return "done"
 
+    async def _handle_owner(self, conn: sqlite3.Connection, settings: Settings, event: queue.QueuedEvent,
+                            now: datetime) -> str | None:
+        """Messages from a linked owner account are owner commands, never customer chats (the AI
+        doesn't see them). "LINK 123456" from anyone links their account. Returns None when the
+        sender is an ordinary customer."""
+        p = event.payload
+        raw, psid = p["event"], p["psid"]
+        owner = owner_accounts.find(conn, p["page_id"], psid)
+        if event.event_type == "echo":
+            return "ignored" if owner else None  # our own or a staff reply to an owner
+        msg = raw.get("message") or {}
+        payload = (msg.get("quick_reply") or {}).get("payload", "") or (raw.get("postback") or {}).get("payload", "")
+        text = (msg.get("text") or (raw.get("postback") or {}).get("title") or "").strip()
+        code = owner_accounts.link_code_in(text)
+        if owner is None and not code:
+            return None
+        responder = self._responder_factory(settings)
+        if owner is None:
+            try:
+                owner = owner_accounts.link(conn, p["page_id"], psid, code, now)
+            except owner_accounts.LinkError as exc:
+                await responder.send_text(psid, str(exc))
+                return "done"
+            notify.alert_owners(conn, settings, "owner_linked",
+                                f"FYI: {owner['label']} linked a Facebook account for Town Donut order alerts.",
+                                f"owner_linked:{owner['id']}:{owner['linked_at']}", exclude=psid, now=now,
+                                every_channel=True)  # a new account that can accept orders: tell everyone
+            await responder.send_text(psid, (
+                f"You're linked as {owner['label']}. New orders, pickup checks and 3 AM reminders will come here. "
+                "Tap the buttons on an alert, or reply YES 12, NO 12, READY 12, PICKED 12 or NOSHOW 12. Reply HELP for all commands.\n\n"
+                "Facebook only lets the Page message you within 24 hours of your last message, so I'll send a daily "
+                "check-in. Tap 👍 on it to keep alerts coming."))
+            return "done"
+        held = owner_accounts.touch(conn, owner["id"], now)
+        if payload.startswith(OWNER_CMD):
+            text = payload.removeprefix(OWNER_CMD)
+        elif payload.startswith(PICK):
+            text = payload.removeprefix(PICK)
+        if code:
+            reply = f"You're already linked as {owner['label']}."
+        elif not text:
+            reply = "👍 Got it. Order alerts stay on here."  # a like or sticker still keeps the window open
+        else:
+            sender = owner_commands.OwnerSender("messenger", psid, owner["label"])
+            reply = owner_commands.handle(conn, settings, self.biz, sender, text[:300], now)
+        if held:
+            reply += f"\n\n{held} alert{'s' if held != 1 else ''} you missed while away {'are' if held != 1 else 'is'} on the way."
+        await responder.send_text(psid, reply)
+        return "done"
+
     async def _deliver(self, ctx: _Ctx, mid: str, result: AgentResult | str | None) -> None:
         """Save the reply under this message's id first, then send it, so a retry resends
         the same reply instead of asking the AI again."""
@@ -153,7 +214,9 @@ class MessageProcessor:
         if result.handoff_reason:
             self._hand_off(ctx, result.handoff_reason, key=f"handoff:{mid}")
         if result.text:
-            conv_svc.record_message(ctx.conn, ctx.customer_id, "assistant", result.text, f"reply:{mid}")
+            # Buttons are saved with the reply, so the AI knows what a tap answers (and a retry resends them).
+            conv_svc.record_message(ctx.conn, ctx.customer_id, "assistant",
+                                    with_buttons_note(result.text, result.quick_replies), f"reply:{mid}")
         if result.summary:
             conv_svc.record_message(ctx.conn, ctx.customer_id, "assistant", result.summary.text, f"reply:{mid}:summary")
         if result.text and result.quick_replies:
@@ -178,7 +241,11 @@ class MessageProcessor:
                 else:
                     await ctx.responder.send_order_summary(ctx.psid, s.text, s.token)
             else:
-                await ctx.responder.send_text(ctx.psid, r["content"])
+                text, options = split_buttons_note(r["content"])
+                if options:
+                    await ctx.responder.send_choices(ctx.psid, text, options)
+                else:
+                    await ctx.responder.send_text(ctx.psid, text)
         return bool(rows)
 
     def _hand_off(self, ctx: _Ctx, reason: str, key: str) -> None:
@@ -274,9 +341,10 @@ def housekeeping_once(conn: sqlite3.Connection, settings: Settings, biz: Busines
                             f"order:{order_id}:expired", order_id=order_id)
     asked = owner_commands.queue_pickup_checks(conn, settings, biz, now)
     reminded = owner_commands.queue_day_reminders(conn, settings, biz, now)
-    if released or expired or asked or reminded:
-        log.info("housekeeping released=%d expired_orders=%s pickup_checks=%s day_reminders=%s",
-                 released, expired, asked, reminded)
+    checkins = owner_accounts.queue_checkins(conn, biz.timezone, now) if settings.owner_alert_channel != "sms" else []
+    if released or expired or asked or reminded or checkins:
+        log.info("housekeeping released=%d expired_orders=%s pickup_checks=%s day_reminders=%s owner_checkins=%s",
+                 released, expired, asked, reminded, checkins)
 
 
 async def _housekeeping(settings: Settings, processor: MessageProcessor) -> None:

@@ -19,7 +19,7 @@ from app.agent.state_machine import InvalidTransition, OrderStatus, assert_trans
 from app.config import Settings
 from app.database.connection import transaction
 from app.services import cart as cart_svc
-from app.services import customers
+from app.services import customers, notify
 from app.services.business import BusinessInfo, validate_pickup_time
 from app.services.phone import display as phone_display
 from app.services.pricing import money
@@ -209,12 +209,9 @@ def submit_order(
             (order_id, str(OrderStatus.PENDING_ACCEPTANCE)),
         )
         order = conn.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
-        body = format_owner_sms(conn, order, biz)
-        for phone in settings.owner_phone_numbers:
-            conn.execute(
-                "INSERT INTO notifications (order_id, type, recipient, body, idempotency_key) VALUES (?, 'new_order', ?, ?, ?)",
-                (order_id, phone, body, f"order:{order_id}:new_order:{phone}"),
-            )
+        notify.alert_owners(conn, settings, "new_order", format_owner_sms(conn, order, biz), f"order:{order_id}:new_order",
+                            order_id=order_id, now=now, buttons=[[f"Accept #{order_id}", f"YES {order_id}"],
+                                                                 [f"Decline #{order_id}", f"NO {order_id}"]])
         conn.execute("UPDATE confirmation_tokens SET used_at = ? WHERE token = ?", (to_db(now), token))
         conn.execute(
             "UPDATE carts SET status = 'submitted', updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?",
