@@ -84,7 +84,7 @@ def test_meaning_finds_the_right_answer(real, query, doc):
 def test_things_we_dont_sell_are_never_an_exact_match(real, query):
     conn, settings, _ = real
     rows, exact = search.find_menu_items(conn, query, min_score=settings.semantic_min_score)
-    assert not exact, [r["name"] for r in rows]
+    assert not rows or not exact, [r["name"] for r in rows]  # nothing, or only "the closest items"
 
 
 def test_prices_still_come_from_the_database(real):
