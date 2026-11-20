@@ -486,8 +486,8 @@ def notice_text(item_name: str, days: int, cutoff_hour: int = 3) -> str:
     the order, with the pickup name and phone number, must be confirmed by 3 AM on the pickup day)."""
     cutoff = time(cutoff_hour).strftime("%-I %p")
     if days <= 1:
-        return (f"{item_name} orders need to be confirmed, with the pickup name and phone number, by {cutoff} on "
-                "the pickup day, when our team starts baking, so they're ordered the day before. It doesn't have to "
-                "be a full 24 hours ahead: ordering today for pickup tomorrow morning is fine.")
-    return (f"{item_name} orders need to be confirmed, with the pickup name and phone number, by {cutoff} "
-            f"{days - 1} day{'s' if days > 2 else ''} before the pickup day.")
+        return (f"{item_name} orders need to be placed by the day before pickup, and confirmed with the pickup name "
+                f"and phone number by {cutoff} on the pickup day, when our team starts baking. It doesn't have to be "
+                "a full 24 hours ahead: ordering today for pickup tomorrow morning is fine, but not for today.")
+    return (f"{item_name} orders need to be placed at least {days} days before the pickup day, and confirmed with "
+            f"the pickup name and phone number by {cutoff}, {days - 1} day{'s' if days > 2 else ''} before it.")

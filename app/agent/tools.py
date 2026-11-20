@@ -180,7 +180,7 @@ def _validate_for_cart(ctx: ToolContext, when: datetime, view: cart_svc.CartView
     """Pickup check that includes the notice the cart's items need (Special Design Donut: day before)."""
     view = view or cart_svc.view_cart(ctx.conn, ctx.customer_id, ctx.settings.tax_rate_bps)
     days, notice = view.advance_notice(ctx.biz.pickup.notice_cutoff_hour)
-    return validate_pickup_time(ctx.biz, when, ctx.now, days, notice)
+    return validate_pickup_time(ctx.biz, when, ctx.now, days, notice, ordered_at=view.notice_ordered_at(ctx.now))
 
 
 def _suggestions(ctx: ToolContext, pv: PickupValidation) -> list[str]:
@@ -318,7 +318,8 @@ def _dispatch(ctx: ToolContext, name: str, a: dict) -> dict:
     if name in ("add_to_cart", "update_cart_item") and discounts.any_discount(a.get("details") or {}):
         return {"error": NO_DISCOUNT_TEXT}
     if name == "add_to_cart":
-        view = cart_svc.add_item(conn, cid, str(a["item_id"]), _whole(a["quantity"], low=1, high=100), a.get("modifier_ids") or None, a.get("details") or None)
+        view = cart_svc.add_item(conn, cid, str(a["item_id"]), _whole(a["quantity"], low=1, high=100), a.get("modifier_ids") or None,
+                                 a.get("details") or None, now=ctx.now)
         out = {"ok": True, "cart": _cart_json(ctx, view)}
         if not a.get("modifier_ids") and (tip := _topping_offer(conn, str(a["item_id"]))):
             # Once per order: only the first bubble tea brings the reminder.

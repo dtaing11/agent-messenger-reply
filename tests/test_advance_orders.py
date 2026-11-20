@@ -32,7 +32,7 @@ def run_tool(c, name, args):
     return asyncio.run(tools.execute(c, name, args))
 
 
-# ---- notice: confirmed by 3 AM on the pickup day (owner, 2026-11-20; was "by the day before")
+# ---- notice: ordered by the day before, confirmed by 3 AM on the pickup day (owner, 2026-11-20)
 
 def test_rules_default_to_a_day_of_notice():
     assert custom_items.CustomRules.from_json('{"questions": {}}').min_days_ahead == 1
@@ -44,7 +44,7 @@ def test_rules_default_to_a_day_of_notice():
 def test_same_day_refused_tomorrow_fine_even_under_24_hours(biz):
     reason = custom_items.notice_text("Special Design Donut", 1)
     pv = validate_pickup_time(biz, TODAY_11, NOW, 1, reason)
-    assert not pv.ok and pv.reason.startswith(reason) and "too late" in pv.reason
+    assert not pv.ok and pv.reason == reason
     assert pv.suggestions and all(local(s, biz.timezone).date() > TODAY_11.date() for s in pv.suggestions)
     late_evening = datetime(2026, 11, 18, 22, 30, tzinfo=CT)
     assert validate_pickup_time(biz, TOMORROW_6, late_evening, 1, reason).ok  # 7.5 hours ahead is fine
@@ -161,3 +161,20 @@ def test_menu_json_design_donut_needs_notice(conn):
     menu.seed_menu(conn, ROOT / "data/menu.json")
     rules = json.loads(menu.get_item(conn, "special_design_donut")["custom_rules"])
     assert rules["min_days_ahead"] == 1
+
+
+def test_design_donut_at_1am_for_that_morning_is_refused_but_yesterdays_order_can_finish(conn, customer_id, settings, biz):
+    """Owner, 2026-11-20: ordered at least the day before; an order started the day before has
+    until 3 AM on the pickup day to be confirmed."""
+    one_am = datetime(2026, 11, 19, 1, 0, tzinfo=CT)
+    c = ctx(conn, customer_id, settings, biz, now=one_am)
+    run_tool(c, "add_to_cart", {"item_id": "special_design_donut", "quantity": 1, "details": DESIGN})
+    r = run_tool(c, "check_pickup_time", {"pickup_time": "2026-11-19 07:30"})
+    assert r["ok"] is False and "day before pickup" in r["reason"] and "(2026-11-20 " in r["suggestions"][0]
+
+    cart.clear_cart(conn, customer_id)
+    cart.add_item(conn, customer_id, "special_design_donut", 1, details=DESIGN, now=datetime(2026, 11, 18, 23, 0, tzinfo=CT))
+    cart.set_pickup_details(conn, customer_id, pickup_time=datetime(2026, 11, 19, 7, 30, tzinfo=CT),
+                            customer_name="Ann", customer_phone="225-555-0123")
+    s = order_svc.present_order_summary(conn, customer_id, biz, settings, datetime(2026, 11, 19, 2, 45, tzinfo=CT))
+    assert order_svc.submit_order(conn, customer_id, s.token, biz, settings, datetime(2026, 11, 19, 2, 55, tzinfo=CT))

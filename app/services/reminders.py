@@ -100,6 +100,11 @@ def still_due(conn: sqlite3.Connection, settings: Settings, biz: BusinessInfo, c
     deadline, item = _deadline(view, biz)
     if deadline is not None and now >= deadline:
         return Due(False)  # too late for that day: when they write again, Sprinkle explains and offers another
+    if deadline is not None:
+        days, _ = view.advance_notice()
+        ordered = local(view.notice_ordered_at(now), biz.timezone).date()
+        if local(view.pickup_time, biz.timezone).date() < ordered + timedelta(days=days):
+            return Due(False)  # ordered for the same day: it can't be made, so there's nothing to remind about
     missing = missing_contact(view, settings.require_customer_phone)
     return Due(bool(missing), missing, deadline, item)
 

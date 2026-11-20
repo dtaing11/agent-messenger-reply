@@ -9,7 +9,7 @@ from datetime import datetime
 from app.database.connection import transaction
 from app.services import custom_items, menu, phone
 from app.services.pricing import Totals, compute_totals
-from app.timeutil import from_db, to_db
+from app.timeutil import from_db, to_db, utcnow
 
 
 class CartError(Exception):
@@ -41,6 +41,7 @@ class CartLine:
     surcharge_pending: bool = False  # a surcharge applies but the store sets the amount
     needs_review: bool = False
     min_days_ahead: int = 0  # calendar days of notice this item needs (Special Design Donut: 1)
+    added_at: datetime | None = None  # when it was put in the cart (the "ordered" time for notice)
 
 
 @dataclass
@@ -67,6 +68,12 @@ class CartView:
     @property
     def needs_review(self) -> bool:
         return any(l.needs_review for l in self.lines)
+
+    def notice_ordered_at(self, now: datetime) -> datetime:
+        """When the items needing notice were ordered: the earliest time one was added (never
+        later than now)."""
+        times = [l.added_at for l in self.lines if l.min_days_ahead and l.added_at is not None]
+        return min([*times, now])
 
     def advance_notice(self, cutoff_hour: int = 3) -> tuple[int, str | None]:
         """(days, what to tell the customer) for the item in the cart needing the most notice."""
@@ -164,6 +171,7 @@ def add_item(
     quantity: int,
     modifiers: list[str] | None = None,
     details: dict | None = None,
+    now: datetime | None = None,
 ) -> CartView:
     with transaction(conn):
         cart = get_or_create_cart(conn, customer_id)
@@ -180,8 +188,8 @@ def add_item(
             conn.execute("UPDATE cart_items SET quantity = ? WHERE id = ?", (new_qty, existing["id"]))
         else:
             conn.execute(
-                "INSERT INTO cart_items (cart_id, item_id, quantity, modifiers, details) VALUES (?, ?, ?, ?, ?)",
-                (cart["id"], item_id, quantity, mods, det),
+                "INSERT INTO cart_items (cart_id, item_id, quantity, modifiers, details, added_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (cart["id"], item_id, quantity, mods, det, to_db(now or utcnow())),
             )
         _bump(conn, cart["id"])
     return view_cart(conn, customer_id)
@@ -289,7 +297,7 @@ def view_cart_by_id(conn: sqlite3.Connection, cart_id: int, tax_rate_bps: int = 
 
 def _view(conn: sqlite3.Connection, cart: sqlite3.Row, tax_rate_bps: int) -> CartView:
     rows = conn.execute(
-        """SELECT ci.id AS line_id, ci.item_id, ci.quantity, ci.modifiers, ci.details,
+        """SELECT ci.id AS line_id, ci.item_id, ci.quantity, ci.modifiers, ci.details, ci.added_at,
                   mi.name, mi.unit_label, mi.price_cents, mi.available, mi.custom_rules
            FROM cart_items ci JOIN menu_items mi ON mi.id = ci.item_id
            WHERE ci.cart_id = ? ORDER BY ci.id""",
@@ -319,6 +327,7 @@ def _view(conn: sqlite3.Connection, cart: sqlite3.Row, tax_rate_bps: int) -> Car
                 unit * r["quantity"], ok, details=details, surcharge_cents=extra, surcharge_pending=pending,
                 needs_review=bool(rules and rules.always_review),
                 min_days_ahead=rules.min_days_ahead if rules else 0,
+                added_at=from_db(r["added_at"]) if r["added_at"] else None,
             )
         )
     return CartView(

@@ -152,21 +152,26 @@ def notice_deadline(biz: BusinessInfo, pickup_day: date, min_days_ahead: int) ->
     return datetime.combine(day, time(biz.pickup.notice_cutoff_hour), tzinfo=biz.tz)
 
 
-def first_notice_day(biz: BusinessInfo, now: datetime, min_days_ahead: int) -> date:
-    """The earliest pickup day an order needing notice can still make."""
-    now_local = now.astimezone(biz.tz)
-    day = now_local.date() + timedelta(days=max(min_days_ahead, 1) - 1)
-    return day if now_local < notice_deadline(biz, day, min_days_ahead) else day + timedelta(days=1)
+def first_notice_day(biz: BusinessInfo, now: datetime, min_days_ahead: int, ordered_at: datetime | None = None) -> date:
+    """The earliest pickup day an order needing notice can still make: ordered at least
+    `min_days_ahead` calendar days before, and still before that day's confirmation deadline."""
+    ordered = min(ordered_at or now, now).astimezone(biz.tz)
+    day = ordered.date() + timedelta(days=min_days_ahead)
+    while now >= notice_deadline(biz, day, min_days_ahead):
+        day += timedelta(days=1)
+    return day
 
 
 def validate_pickup_time(biz: BusinessInfo, pickup: datetime, now: datetime, min_days_ahead: int = 0,
-                         notice_reason: str | None = None) -> PickupValidation:
+                         notice_reason: str | None = None, ordered_at: datetime | None = None) -> PickupValidation:
     """Check a pickup time against hours, closures, lead time and the booking horizon.
 
     `pickup` must be timezone-aware; callers interpret customer text in the store timezone.
-    `min_days_ahead` is days of notice for items like the Special Design Donut (1 = confirmed by
-    3 AM on the pickup day; see notice_deadline), with `notice_reason` as the explanation for
-    the customer. Checked again when the order is sent, so a late confirmation is refused.
+    `min_days_ahead` is calendar days of notice for items like the Special Design Donut, with
+    `notice_reason` as the explanation for the customer. Owner rule (1 day): it must be ordered
+    (`ordered_at`, when it went in the cart; default now) on a day before the pickup day, and
+    confirmed by 3 AM on the pickup day (see notice_deadline). Checked again when the order is
+    sent, so a late confirmation is refused.
     """
     if pickup.tzinfo is None:
         raise ValueError("pickup time must be timezone-aware")
@@ -174,7 +179,10 @@ def validate_pickup_time(biz: BusinessInfo, pickup: datetime, now: datetime, min
     now_local = now.astimezone(biz.tz)
 
     reason = None
-    if min_days_ahead and now_local >= notice_deadline(biz, local.date(), min_days_ahead):
+    ordered_local = min(ordered_at or now, now).astimezone(biz.tz)
+    if min_days_ahead and local.date() < ordered_local.date() + timedelta(days=min_days_ahead):
+        reason = notice_reason or f"This order needs to be placed at least {min_days_ahead} day(s) before pickup."
+    elif min_days_ahead and now_local >= notice_deadline(biz, local.date(), min_days_ahead):
         deadline = notice_deadline(biz, local.date(), min_days_ahead)
         reason = ((notice_reason or "This order needs more notice.") +
                   f" For pickup on {local:%a %b} {local.day}, it had to be confirmed by "
@@ -195,17 +203,18 @@ def validate_pickup_time(biz: BusinessInfo, pickup: datetime, now: datetime, min
             reason = f"Pickup times are in {biz.pickup.slot_minutes}-minute steps."
 
     if reason:
-        return PickupValidation(False, reason, local, tuple(next_slots(biz, now, after=local, min_days_ahead=min_days_ahead)))
+        return PickupValidation(False, reason, local, tuple(next_slots(biz, now, after=local, min_days_ahead=min_days_ahead,
+                                                                      ordered_at=ordered_at)))
     return PickupValidation(True, None, local)
 
 
 def next_slots(biz: BusinessInfo, now: datetime, after: datetime | None = None, count: int = 3,
-               min_days_ahead: int = 0) -> list[datetime]:
+               min_days_ahead: int = 0, ordered_at: datetime | None = None) -> list[datetime]:
     """Earliest valid pickup slots at or after `after` (or now + lead time)."""
     earliest = now.astimezone(biz.tz) + timedelta(minutes=biz.pickup.min_lead_minutes)
     last_day = earliest.date() + timedelta(days=biz.pickup.max_days_ahead)
     if min_days_ahead:
-        first_day = first_notice_day(biz, now, min_days_ahead)
+        first_day = first_notice_day(biz, now, min_days_ahead, ordered_at)
         earliest = max(earliest, datetime.combine(first_day, time(0), tzinfo=biz.tz))
     start = max(earliest, after.astimezone(biz.tz)) if after else earliest
     if start.date() > last_day:

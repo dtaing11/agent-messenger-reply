@@ -88,7 +88,7 @@ def _check_ready(view: cart_svc.CartView, biz: BusinessInfo, now: datetime, requ
     if view.unavailable:
         raise SummaryChanged("No longer available: " + ", ".join(view.unavailable) + ".")
     days, notice = view.advance_notice(biz.pickup.notice_cutoff_hour)
-    pv = validate_pickup_time(biz, view.pickup_time, now, days, notice)
+    pv = validate_pickup_time(biz, view.pickup_time, now, days, notice, ordered_at=view.notice_ordered_at(now))
     if not pv.ok:
         raise SummaryChanged(pv.reason or "That pickup time is no longer available.")
 

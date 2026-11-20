@@ -20,7 +20,7 @@ def _snapshot(conn: sqlite3.Connection, customer_id: int) -> dict:
     snap: dict = {"cart": None, "set_aside_cart_id": conv["set_aside_cart_id"] if conv else None,
                   "state": conv["state"] if conv else None}
     if cart is not None:
-        items = conn.execute("SELECT item_id, quantity, modifiers, details FROM cart_items WHERE cart_id = ? ORDER BY id",
+        items = conn.execute("SELECT item_id, quantity, modifiers, details, added_at FROM cart_items WHERE cart_id = ? ORDER BY id",
                              (cart["id"],)).fetchall()
         snap["cart"] = {"id": cart["id"], "pickup_time": cart["pickup_time"], "customer_name": cart["customer_name"],
                         "customer_phone": cart["customer_phone"], "notes": cart["notes"],
@@ -42,8 +42,9 @@ def _restore(conn: sqlite3.Connection, customer_id: int, snap: dict) -> None:
                 (saved["pickup_time"], saved["customer_name"], saved["customer_phone"], saved["notes"], saved["id"]),
             )
             conn.execute("DELETE FROM cart_items WHERE cart_id = ?", (saved["id"],))
-            conn.executemany("INSERT INTO cart_items (cart_id, item_id, quantity, modifiers, details) VALUES (?, ?, ?, ?, ?)",
-                             [(saved["id"], *item) for item in saved["items"]])
+            conn.executemany(
+                "INSERT INTO cart_items (cart_id, item_id, quantity, modifiers, details, added_at) VALUES (?, ?, ?, ?, ?, ?)",
+                [(saved["id"], *item[:4], item[4] if len(item) > 4 else None) for item in saved["items"]])
         if snap.get("state"):
             conn.execute("UPDATE conversations SET set_aside_cart_id = ?, state = ? WHERE customer_id = ?",
                          (snap["set_aside_cart_id"], snap["state"], customer_id))

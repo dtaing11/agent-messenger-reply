@@ -14,6 +14,7 @@ from app.integrations.messenger import POSTBACK_CONFIRM, POSTBACK_MODIFY
 from app.services import cart, conversation as conv, owner_accounts, owner_commands
 from app.services import order as order_svc
 from app.services.business import validate_pickup_time
+from app.timeutil import local
 from app.workers.message_worker import MessageProcessor, housekeeping_once, run_once
 from tests.conftest import NOW
 from tests.test_agent import call
@@ -261,14 +262,24 @@ def test_hours_boundaries(biz, hhmm, ok):
     assert validate_pickup_time(biz, when, NOW).ok is ok
 
 
-def test_design_donut_deadline_boundaries(biz):
-    """Owner, 2026-11-20 (replacing "by the day before"): confirmed by 3 AM on the pickup day."""
+def test_design_donut_day_before_boundaries(biz):
     late = datetime(2026, 11, 18, 23, 59, tzinfo=CT)
     assert validate_pickup_time(biz, datetime(2026, 11, 19, 4, 30, tzinfo=CT), late, 1).ok
-    assert validate_pickup_time(biz, datetime(2026, 11, 19, 11, 0, tzinfo=CT),
-                                datetime(2026, 11, 19, 2, 59, tzinfo=CT), 1).ok
     assert not validate_pickup_time(biz, datetime(2026, 11, 19, 11, 0, tzinfo=CT),
-                                    datetime(2026, 11, 19, 3, 0, tzinfo=CT), 1).ok
+                                    datetime(2026, 11, 19, 0, 1, tzinfo=CT), 1).ok
+
+
+def test_design_donut_ordered_the_day_before_can_be_confirmed_until_3am(biz):
+    """Owner, 2026-11-20: ordered Friday for Saturday, it can be confirmed until 3 AM Saturday."""
+    ordered = datetime(2026, 11, 18, 23, 59, tzinfo=CT)
+    pickup = datetime(2026, 11, 19, 11, 0, tzinfo=CT)
+    assert validate_pickup_time(biz, pickup, datetime(2026, 11, 19, 2, 59, tzinfo=CT), 1, ordered_at=ordered).ok
+    late = validate_pickup_time(biz, pickup, datetime(2026, 11, 19, 3, 0, tzinfo=CT), 1, ordered_at=ordered)
+    assert not late.ok and "too late" in late.reason
+    # Ordered at 1 AM for that same morning: refused even though it's before 3 AM.
+    one_am = datetime(2026, 11, 19, 1, 0, tzinfo=CT)
+    same_day = validate_pickup_time(biz, pickup, one_am, 1, ordered_at=one_am)
+    assert not same_day.ok and local(same_day.suggestions[0], biz.timezone).date() > pickup.date()
 
 
 def test_dst_days(biz):

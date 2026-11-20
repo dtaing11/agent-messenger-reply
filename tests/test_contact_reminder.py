@@ -128,7 +128,7 @@ DESIGN = {"message": "Happy Birthday Emma", "name": "Emma", "design": "pink and 
 @pytest.fixture
 def design(conn, customer_id):
     conv.record_message(conn, customer_id, "customer", "a birthday donut for tomorrow 7:30")
-    cart.add_item(conn, customer_id, "special_design_donut", 1, details=DESIGN)
+    cart.add_item(conn, customer_id, "special_design_donut", 1, details=DESIGN, now=NOW)  # ordered Wed for Thu
     cart.set_pickup_details(conn, customer_id, pickup_time=TOMORROW)
     return customer_id
 
@@ -168,3 +168,13 @@ def test_design_donut_order_cant_be_sent_after_3am_on_the_pickup_day(conn, desig
         order_svc.submit_order(conn, design, s.token, biz, settings, datetime(2026, 11, 19, 3, 1, tzinfo=CT))
     s = order_svc.present_order_summary(conn, design, biz, settings, summary_at)
     assert order_svc.submit_order(conn, design, s.token, biz, settings, datetime(2026, 11, 19, 2, 59, tzinfo=CT))
+
+
+def test_no_reminder_for_a_same_day_design_donut(conn, customer_id, settings, biz):
+    one_am = datetime(2026, 11, 19, 1, 0, tzinfo=CT)
+    conv.record_message(conn, customer_id, "customer", "birthday donut for 7:30 this morning")
+    cart.add_item(conn, customer_id, "special_design_donut", 1, details=DESIGN, now=one_am)
+    cart.set_pickup_details(conn, customer_id, pickup_time=TOMORROW)
+    now = one_am + timedelta(minutes=20)
+    quiet_since(conn, customer_id, one_am)
+    assert reminders.queue_contact_reminders(conn, settings, biz, now) == []  # can't be made: nothing to remind about
