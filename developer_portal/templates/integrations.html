@@ -26,7 +26,12 @@
     </ol>
   </details>
 
-  <form hx-post="/admin/integrations/meta" hx-target="#meta-result">
+
+  {% if saved == 'tunnel' %}<div class="result good" role="status"><p>✓ Found your tunnel and saved it: {{ s.public_base_url }}</p></div>{% endif %}
+  {% if saved == 'meta' %}<div class="result good" role="status"><p>✓ Saved. It takes effect on the next message, with no restart.</p></div>{% endif %}
+  {% if error == 'meta' %}<div class="result bad" role="status"><p>✗ That didn't save. Check the values and try again.</p></div>{% endif %}
+  <form id="meta-form" method="post" action="/admin/integrations/meta" hx-post="/admin/integrations/meta" hx-target="#meta-save-result">
+    <input type="hidden" name="csrf_token" value="{{ user.csrf_token }}">
     <div class="grid">
       <label>Page ID <input name="meta_page_id" value="{{ s.meta_page_id }}" inputmode="numeric"></label>
       <label>App ID <input name="meta_app_id" value="{{ s.meta_app_id }}" inputmode="numeric"></label>
@@ -42,8 +47,9 @@
     </label>
     <div class="actions">
       <button type="submit">Save</button>
-      <button type="button" class="secondary" hx-post="/admin/integrations/tunnel/detect" hx-target="#meta-result">Detect tunnel</button>
+      <button type="button" class="secondary" hx-post="/admin/integrations/tunnel/detect" hx-target="#meta-save-result">Detect tunnel</button>
     </div>
+    <div id="meta-save-result"></div>
   </form>
 
   <div class="grid">
@@ -60,10 +66,10 @@
     <div>
       <p><b>Connect</b></p>
       <div class="actions">
-        <button type="button" class="secondary" hx-post="/admin/integrations/meta/test" hx-target="#meta-result" hx-indicator="#meta-busy">Test credentials</button>
-        <button type="button" hx-post="/admin/integrations/meta/connect" hx-target="#meta-result" hx-indicator="#meta-busy">Connect automatically</button>
+        <button type="button" class="secondary" hx-post="/admin/integrations/meta/test" hx-include="#meta-form" hx-target="#meta-result" hx-indicator="#meta-busy">Test credentials</button>
+        <button type="button" hx-post="/admin/integrations/meta/connect" hx-include="#meta-form" hx-target="#meta-result" hx-indicator="#meta-busy">Connect automatically</button>
       </div>
-      <small class="muted">Sets your Meta app's webhook to the callback URL and subscribes your Page to messages.</small>
+      <small class="muted">Saves what you typed above, sets your Meta app's webhook to the callback URL and subscribes your Page to messages.</small>
       <span id="meta-busy" class="busy">Working…</span>
     </div>
   </div>
@@ -74,7 +80,11 @@
   <header><strong>OpenRouter (AI replies)</strong>
     {% with st=status.openrouter.status %}{% include "partials/badge.html" %}{% endwith %}
     <small class="muted">{{ status.openrouter.detail }}</small></header>
-  <form hx-post="/admin/integrations/openrouter" hx-target="#or-result">
+
+  {% if saved == 'openrouter' %}<div class="result good" role="status"><p>✓ Saved. It takes effect on the next message, with no restart.</p></div>{% endif %}
+  {% if error == 'openrouter' %}<div class="result bad" role="status"><p>✗ That didn't save. Check the values and try again.</p></div>{% endif %}
+  <form id="or-form" method="post" action="/admin/integrations/openrouter" hx-post="/admin/integrations/openrouter" hx-target="#or-result">
+    <input type="hidden" name="csrf_token" value="{{ user.csrf_token }}">
     <div class="grid">
       {{ secret_field('openrouter_api_key', 'API key', 'From openrouter.ai/keys. Set a spending limit there.') }}
       <label>Model <input name="ai_model" value="{{ s.ai_model }}" placeholder="e.g. google/gemini-2.5-flash-lite"></label>
@@ -82,7 +92,7 @@
     </div>
     <div class="actions">
       <button type="submit">Save</button>
-      <button type="button" class="secondary" hx-post="/admin/integrations/openrouter/test" hx-target="#or-result">Test</button>
+      <button type="button" class="secondary" hx-post="/admin/integrations/openrouter/test" hx-include="#or-form" hx-target="#or-result">Test</button>
     </div>
   </form>
   <small class="muted">The AI assistant isn't switched on yet. Until it is, customers get a fixed "we'll get back to you" reply.</small>
@@ -93,7 +103,11 @@
   <header><strong>Twilio (texts to owners)</strong>
     {% with st=status.twilio.status %}{% include "partials/badge.html" %}{% endwith %}
     <small class="muted">{{ status.twilio.detail }}</small></header>
-  <form hx-post="/admin/integrations/twilio" hx-target="#tw-result">
+
+  {% if saved == 'twilio' %}<div class="result good" role="status"><p>✓ Saved. It takes effect on the next message, with no restart.</p></div>{% endif %}
+  {% if error == 'twilio' %}<div class="result bad" role="status"><p>✗ That didn't save. Check the values and try again.</p></div>{% endif %}
+  <form id="tw-form" method="post" action="/admin/integrations/twilio" hx-post="/admin/integrations/twilio" hx-target="#tw-result">
+    <input type="hidden" name="csrf_token" value="{{ user.csrf_token }}">
     <div class="grid">
       <label>Account SID <input name="twilio_account_sid" value="{{ s.twilio_account_sid }}" autocomplete="off"></label>
       {{ secret_field('twilio_auth_token', 'Auth token') }}
@@ -103,7 +117,7 @@
       <textarea name="owner_phone_numbers" rows="2">{{ s.owner_phone_numbers|join('\n') }}</textarea></label>
     <div class="actions">
       <button type="submit">Save</button>
-      <button type="button" class="secondary" hx-post="/admin/integrations/twilio/test" hx-target="#tw-result">Test (no text is sent)</button>
+      <button type="button" class="secondary" hx-post="/admin/integrations/twilio/test" hx-include="#tw-form" hx-target="#tw-result">Test (no text is sent)</button>
     </div>
   </form>
   <div id="tw-result"></div>

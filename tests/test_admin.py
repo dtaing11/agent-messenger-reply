@@ -85,7 +85,7 @@ def test_save_meta_encrypts_and_applies(logged_in, settings):
         "meta_page_id": "PAGE9", "meta_app_id": "APP9", "meta_graph_api_version": "v21.0",
         "meta_app_secret": "s3cret-value", "meta_page_access_token": "", "public_base_url": "https://abc.trycloudflare.com/",
     })
-    assert "Saved" in r.text and "Updated 1 credential" in r.text
+    assert r.status_code == 200 and "✓ Saved." in r.text  # followed the redirect back to the page
     conn = connect(settings.database_path)
     raw = conn.execute("SELECT ciphertext FROM secret_versions WHERE name = 'meta_app_secret'").fetchone()[0]
     assert b"s3cret-value" not in raw
@@ -100,8 +100,36 @@ def test_save_meta_encrypts_and_applies(logged_in, settings):
 
 
 def test_bad_public_url_rejected(logged_in):
-    r = logged_in.post("/admin/integrations/meta", data={"public_base_url": "http://localhost:8000"})
+    r = logged_in.post("/admin/integrations/meta", data={"public_base_url": "http://localhost:8000"}, headers={"HX-Request": "true"})
     assert "https://" in r.text and "✗" in r.text
+
+
+def test_htmx_save_reloads_page(logged_in):
+    r = logged_in.post("/admin/integrations/meta", data={"meta_page_id": "P1"}, headers={"HX-Request": "true"})
+    assert r.status_code == 204 and r.headers["HX-Redirect"] == "/admin/integrations?saved=meta#meta"
+
+
+def test_plain_form_post_works_without_htmx(logged_in, settings):
+    """If HTMX doesn't load, the form still posts normally with its hidden CSRF field."""
+    token = logged_in.headers.pop("X-CSRF-Token")
+    r = logged_in.post("/admin/integrations/meta", data={"meta_page_id": "P2", "csrf_token": token}, follow_redirects=False)
+    assert r.status_code == 303 and "saved=meta" in r.headers["location"]
+    assert effective_settings(connect(settings.database_path), settings, None).meta_page_id == "P2"
+
+
+def test_connect_saves_typed_values_first(logged_in, settings):
+    """The user's real-world flow: type everything, click Connect without Save."""
+    settings.meta_page_access_token = settings.meta_page_access_token.__class__("")
+    settings.meta_page_id = ""
+    logged_in.post("/admin/integrations/meta", data={"public_base_url": "https://abc.trycloudflare.com"})
+    calls = []
+    logged_in.app.state.http = httpx.AsyncClient(transport=_graph_transport(calls))
+    r = logged_in.post("/admin/integrations/meta/connect", data={
+        "meta_page_id": "PAGE1", "meta_app_id": "APP1", "meta_graph_api_version": "v21.0",
+        "meta_app_secret": "s", "meta_page_access_token": "page-token",
+        "public_base_url": "",  # stale empty box must not wipe the saved tunnel URL
+    })
+    assert "Connected" in r.text, r.text
 
 
 def test_verify_token_generate_and_reveal(logged_in):

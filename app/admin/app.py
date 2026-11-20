@@ -103,6 +103,12 @@ def runtime_settings(request: Request, conn: sqlite3.Connection = Depends(get_db
     return runtime.effective_settings(conn, base, request.app.state.secret_store)
 
 
+def get_settings_for(request: Request) -> Settings:
+    """Base settings, honoring dependency overrides (used by tests)."""
+    override = request.app.dependency_overrides.get(get_settings)
+    return override() if override else get_settings()
+
+
 def current_user(request: Request, conn: sqlite3.Connection = Depends(get_db)) -> auth.AdminUser:
     user = auth.session_user(conn, request.cookies.get(auth.COOKIE), utcnow())
     if user is None:
@@ -311,54 +317,82 @@ def create_admin_app() -> FastAPI:
             if not secrets_status[n]["configured"] and getattr(s, n).get_secret_value():
                 secrets_status[n] = {"configured": True, "updated_at": "from .env"}
         return page(request, "integrations.html", user, s=s, sec=secrets_status,
-                    status=integration_status(conn, s), callback_url=checks.callback_url(s))
+                    status=integration_status(conn, s), callback_url=checks.callback_url(s),
+                    saved=request.query_params.get("saved"), error=request.query_params.get("error"))
 
-    async def _save(request: Request, conn, user, plain: tuple[str, ...], secret: tuple[str, ...], label: str):
+    async def _apply_form(request: Request, conn, user, plain: tuple[str, ...], secret: tuple[str, ...], label: str,
+                          keep_blank: bool = False) -> str | None:
+        """Save whichever of these fields the form sent. Returns an error message, or None.
+        keep_blank: a blank field leaves the saved value alone (used when Test/Connect auto-save,
+        so a stale empty box on the page can't wipe a value saved a moment ago)."""
         form = await request.form()
         store: SecretStore = request.app.state.secret_store
         values = {k: str(form.get(k, "")).strip() for k in plain if k in form}
-        if "public_base_url" in values and values["public_base_url"]:
+        if keep_blank:
+            values = {k: v for k, v in values.items() if v}
+        if values.get("public_base_url"):
             try:
                 values["public_base_url"] = checks.validate_public_base_url(values["public_base_url"])
             except ValueError as exc:
-                return result(request, False, str(exc))
+                return str(exc)
         try:
             runtime.set_values(conn, values, user.username)
         except ValidationError as exc:
-            return result(request, False, "Please check: " + "; ".join(e["msg"] for e in exc.errors()))
+            return "Please check: " + "; ".join(e["msg"] for e in exc.errors())
         changed = []
         for name in secret:
             val = str(form.get(name, "")).strip()
             if val:  # blank means keep the current value
                 store.put(conn, name, val, user.username)
                 changed.append(name)
-        auth.audit(conn, user.username, f"settings.save.{label}", ",".join(list(values) + changed) or None, "ok")
-        msg = "Saved." + (f" Updated {len(changed)} credential(s)." if changed else "")
-        resp = result(request, True, msg + " It takes effect on the next message, with no restart.")
-        resp.headers["HX-Trigger"] = "refresh-health"
-        return resp
+        if values or changed:
+            auth.audit(conn, user.username, f"settings.save.{label}", ",".join(list(values) + changed), "ok")
+        return None
 
-    async def _run_check(request: Request, conn, user, name: str, fn, s: Settings):
+    async def _save(request: Request, conn, user, plain: tuple[str, ...], secret: tuple[str, ...], label: str):
+        error = await _apply_form(request, conn, user, plain, secret, label)
+        if error:
+            if not request.headers.get("hx-request"):
+                return RedirectResponse(f"/admin/integrations?error={label}#{label}", status_code=303)
+            return result(request, False, error)
+        # Reload the page so the status badge and "saved" labels update right away.
+        target = f"/admin/integrations?saved={label}#{label}"
+        if request.headers.get("hx-request"):
+            return Response(status_code=204, headers={"HX-Redirect": target})
+        return RedirectResponse(target, status_code=303)
+
+    async def _run_check(request: Request, conn, user, name: str, fn, plain=(), secret=()):
+        # Buttons send the form too, so typed-but-unsaved values are saved before testing.
+        error = await _apply_form(request, conn, user, plain, secret, name, keep_blank=True) if plain or secret else None
+        if error:
+            return result(request, False, error)
+        s = runtime.effective_settings(conn, get_settings_for(request), request.app.state.secret_store)
         try:
             res = await fn(s, request.app.state.http)
         except httpx.HTTPError as exc:
             res = checks.CheckResult(False, "DOWN", f"Couldn't reach the provider ({type(exc).__name__}).")
         save_check(conn, name, res)
         auth.audit(conn, user.username, f"integration.test.{name}", None, res.status)
-        return result(request, res.ok, res.detail, res.steps)
+        resp = result(request, res.ok, res.detail, res.steps)
+        resp.headers["HX-Trigger"] = "refresh-health"
+        return resp
+
+    META_PLAIN = ("meta_page_id", "meta_app_id", "meta_graph_api_version", "public_base_url")
+    META_SECRET = ("meta_app_secret", "meta_page_access_token")
+    OR_PLAIN, OR_SECRET = ("ai_model", "ai_fallback_model"), ("openrouter_api_key",)
+    TW_PLAIN, TW_SECRET = ("twilio_account_sid", "twilio_phone_number", "owner_phone_numbers"), ("twilio_auth_token",)
 
     @app.post("/admin/integrations/meta")
     async def save_meta(request: Request, conn=Depends(get_db), user=Depends(admin_user)):
-        return await _save(request, conn, user, ("meta_page_id", "meta_app_id", "meta_graph_api_version", "public_base_url"),
-                           ("meta_app_secret", "meta_page_access_token"), "meta")
+        return await _save(request, conn, user, META_PLAIN, META_SECRET, "meta")
 
     @app.post("/admin/integrations/meta/test")
-    async def test_meta(request: Request, conn=Depends(get_db), user=Depends(admin_user), s=Depends(runtime_settings)):
-        return await _run_check(request, conn, user, "meta", checks.test_meta, s)
+    async def test_meta(request: Request, conn=Depends(get_db), user=Depends(admin_user)):
+        return await _run_check(request, conn, user, "meta", checks.test_meta, META_PLAIN, META_SECRET)
 
     @app.post("/admin/integrations/meta/connect")
-    async def connect_meta(request: Request, conn=Depends(get_db), user=Depends(admin_user), s=Depends(runtime_settings)):
-        return await _run_check(request, conn, user, "meta", checks.connect_meta, s)
+    async def connect_meta(request: Request, conn=Depends(get_db), user=Depends(admin_user)):
+        return await _run_check(request, conn, user, "meta", checks.connect_meta, META_PLAIN, META_SECRET)
 
     @app.post("/admin/integrations/meta/verify-token")
     async def verify_token(request: Request, conn=Depends(get_db), user=Depends(admin_user), s=Depends(runtime_settings)):
@@ -379,26 +413,24 @@ def create_admin_app() -> FastAPI:
             return result(request, False, "No running Cloudflare quick tunnel was found on this computer.")
         runtime.set_values(conn, {"public_base_url": url}, user.username)
         auth.audit(conn, user.username, "tunnel.detect", url, "ok")
-        resp = result(request, True, f"Found your tunnel and saved it: {url}")
-        resp.headers["HX-Trigger"] = "refresh-health"
-        return resp
+        # Reload so the Public URL box shows the saved address (and can't be re-sent stale).
+        return Response(status_code=204, headers={"HX-Redirect": "/admin/integrations?saved=tunnel#meta"})
 
     @app.post("/admin/integrations/openrouter")
     async def save_openrouter(request: Request, conn=Depends(get_db), user=Depends(admin_user)):
-        return await _save(request, conn, user, ("ai_model", "ai_fallback_model"), ("openrouter_api_key",), "openrouter")
+        return await _save(request, conn, user, OR_PLAIN, OR_SECRET, "openrouter")
 
     @app.post("/admin/integrations/openrouter/test")
-    async def test_openrouter(request: Request, conn=Depends(get_db), user=Depends(admin_user), s=Depends(runtime_settings)):
-        return await _run_check(request, conn, user, "openrouter", checks.test_openrouter, s)
+    async def test_openrouter(request: Request, conn=Depends(get_db), user=Depends(admin_user)):
+        return await _run_check(request, conn, user, "openrouter", checks.test_openrouter, OR_PLAIN, OR_SECRET)
 
     @app.post("/admin/integrations/twilio")
     async def save_twilio(request: Request, conn=Depends(get_db), user=Depends(admin_user)):
-        return await _save(request, conn, user, ("twilio_account_sid", "twilio_phone_number", "owner_phone_numbers"),
-                           ("twilio_auth_token",), "twilio")
+        return await _save(request, conn, user, TW_PLAIN, TW_SECRET, "twilio")
 
     @app.post("/admin/integrations/twilio/test")
-    async def test_twilio(request: Request, conn=Depends(get_db), user=Depends(admin_user), s=Depends(runtime_settings)):
-        return await _run_check(request, conn, user, "twilio", checks.test_twilio, s)
+    async def test_twilio(request: Request, conn=Depends(get_db), user=Depends(admin_user)):
+        return await _run_check(request, conn, user, "twilio", checks.test_twilio, TW_PLAIN, TW_SECRET)
 
     # ---- business
     @app.get("/admin/business")
