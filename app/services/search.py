@@ -13,9 +13,14 @@ from app.services import knowledge, menu, semantic
 log = logging.getLogger(__name__)
 
 RRF_K = 60
-# A meaning match must clear the minimum score and sit near the best one, so an unrelated
-# question ("do you sell pizza") doesn't pull in random items.
+# A meaning match must clear the minimum score and sit near the best one. Measured on the real
+# model (bge-small-en-v1.5, 2026-11-20): good menu matches score about 0.63-0.82, but unrelated
+# words still reach 0.62-0.67 ("pizza", "hamburger" against kolaches), so when keywords found
+# nothing, the closest-only answer needs a higher bar. FAQ entries are longer, so a fitting
+# answer scores a little lower ("when do you close" -> hours, 0.614).
 NEAR_BEST = 0.10
+CLOSEST_ONLY_EXTRA = 0.05
+FAQ_OFFSET = -0.03
 
 
 def rrf(*rankings: list[str], k: int = RRF_K) -> list[str]:
@@ -54,7 +59,7 @@ def sync_all(conn: sqlite3.Connection, index: semantic.SemanticIndex) -> None:
     index.sync("faq", faq_documents(conn))
 
 
-def _meaning(conn: sqlite3.Connection, kind: str, query: str, limit: int, min_score: float) -> list[str]:
+def _meaning(conn: sqlite3.Connection, kind: str, query: str, limit: int, min_score: float) -> list[tuple[str, float]]:
     index = semantic.get_index()
     if index is None or not query.strip():
         return []
@@ -67,7 +72,7 @@ def _meaning(conn: sqlite3.Connection, kind: str, query: str, limit: int, min_sc
     if not hits:
         return []
     best = hits[0][1]
-    return [d for d, score in hits if score >= min_score and score >= best - NEAR_BEST]
+    return [(d, score) for d, score in hits if score >= min_score and score >= best - NEAR_BEST]
 
 
 # --- menu -------------------------------------------------------------------------------
@@ -91,7 +96,9 @@ def find_menu_items(conn: sqlite3.Connection, query: str, limit: int = 8,
         return menu.search_menu(conn, query, limit=limit), True
     keyword = _keyword_menu(conn, query, 20)
     meaning = _meaning(conn, "menu", query, 20, min_score)
-    order = rrf([r["id"] for r in keyword], meaning)[:limit]
+    if not keyword:
+        meaning = [(d, s) for d, s in meaning if s >= min_score + CLOSEST_ONLY_EXTRA]
+    order = rrf([r["id"] for r in keyword], [d for d, _ in meaning])[:limit]
     if not order:
         return [], True
     marks = ",".join("?" * len(order))
@@ -103,8 +110,8 @@ def find_menu_items(conn: sqlite3.Connection, query: str, limit: int = 8,
 
 def find_knowledge(conn: sqlite3.Connection, query: str, limit: int = 4, min_score: float = 0.62) -> list[dict]:
     keyword = knowledge.search(conn, query, limit=8)
-    meaning = _meaning(conn, "faq", query, 8, min_score)
-    order = rrf([d["id"] for d in keyword], meaning)[:limit]
+    meaning = _meaning(conn, "faq", query, 8, min_score + FAQ_OFFSET)
+    order = rrf([d["id"] for d in keyword], [d for d, _ in meaning])[:limit]
     if not order:
         return []
     marks = ",".join("?" * len(order))

@@ -215,3 +215,27 @@ def test_portal_saves_search_words(real_menu):
     assert menu.get_item(real_menu, "long_john")["search_terms"] == "longjohn, eclair"
     item = next(i for i in menu_admin.export_menu(real_menu)["items"] if i["id"] == "long_john")
     assert item["search_terms"] == "longjohn, eclair"
+
+
+def test_closest_only_answers_need_a_higher_score(real_menu, index):
+    """Measured on the real model: unrelated words ("pizza") still score about 0.62-0.67."""
+    search.sync_all(real_menu, index)
+    index.sync = lambda *a, **k: 0
+    index.search = lambda kind, q, limit: [("boudin_cheese_kolache", 0.64)]
+    assert search.find_menu_items(real_menu, "pizza", min_score=0.62) == ([], True)
+    index.search = lambda kind, q, limit: [("boudin_cheese_kolache", 0.70)]
+    rows, exact = search.find_menu_items(real_menu, "pizza", min_score=0.62)
+    assert names(rows) == ["Boudin Cheese Kolache"] and not exact
+    # With a keyword match, a 0.64 meaning match still helps the ranking.
+    index.search = lambda kind, q, limit: [("filled_donut", 0.64)]
+    assert names(search.find_menu_items(real_menu, "something with a filling", min_score=0.62)[0])[0] == "Filled Donut"
+
+
+def test_faq_short_words_match_whole_words_only(real_menu, index):
+    index.sync = lambda *a, **k: 0
+    index.search = lambda kind, q, limit: []
+    assert knowledge.search(real_menu, "do you have tea") == []  # not "team"
+    assert [d["id"] for d in knowledge.search(real_menu, "when do you open")][:1] == ["hours"]
+    # FAQ answers score a bit lower than menu items, so they get a slightly lower bar.
+    index.search = lambda kind, q, limit: [("hours", 0.60)]
+    assert [d["id"] for d in search.find_knowledge(real_menu, "when do you close", min_score=0.62)] == ["hours"]

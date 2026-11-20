@@ -29,7 +29,9 @@ def main(queries: list[str]) -> None:
     semantic.set_index(index)
     menu_names = {r["id"]: r["name"] for r in conn.execute("SELECT id, name FROM menu_items")}
     faq_q = {r["id"]: r["question"] for r in conn.execute("SELECT id, question FROM knowledge_documents")}
-    print(f"min score {settings.semantic_min_score}, keep within {search.NEAR_BEST} of the best\n")
+    m = settings.semantic_min_score
+    print(f"min score {m} (closest-only menu {m + search.CLOSEST_ONLY_EXTRA:.2f}, faq {m + search.FAQ_OFFSET:.2f}), "
+          f"keep within {search.NEAR_BEST} of the best\n")
     for q in queries or DEFAULT_QUERIES:
         print(f"== {q}")
         hits = index.search("menu", q, 6)
