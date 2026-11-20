@@ -20,7 +20,7 @@ from app.config import Settings
 from app.database.connection import transaction
 from app.services import cart as cart_svc
 from app.services import customers, notify
-from app.services.business import BusinessInfo, validate_pickup_time
+from app.services.business import BusinessInfo, staffed_from, validate_pickup_time
 from app.services.phone import display as phone_display
 from app.services.pricing import money
 from app.timeutil import from_db, local, to_db
@@ -46,6 +46,7 @@ LONG_NAME_NOTE = "Names longer than 7 letters have an extra charge. Our team wil
 
 
 def _detail_lines(details: dict, indent: str) -> list[str]:
+    details = {k: cart_svc.one_line(v) if isinstance(v, str) else v for k, v in details.items()}
     out = []
     if details.get("message"):
         out.append(f'{indent}Message: "{details["message"]}"')
@@ -180,11 +181,7 @@ def submit_order(
             raise SummaryChanged("Prices changed since your summary. Please review the updated total.")
 
         needs_review = view.needs_review or view.totals.subtotal_cents >= settings.large_order_threshold_cents > 0
-        expires_at = (
-            to_db(now + timedelta(minutes=settings.pending_order_expiry_minutes))
-            if settings.pending_order_expiry_minutes
-            else None
-        )
+        expires_at = to_db(pending_expiry(biz, now, view.pickup_time, settings.pending_order_expiry_minutes))
         cur = conn.execute(
             """INSERT INTO orders (customer_id, cart_id, cart_version, customer_name, customer_phone, location, pickup_time,
                  subtotal_cents, tax_cents, total_cents, status, notes, needs_review, expires_at)
@@ -239,6 +236,14 @@ _DECIDED_TEXT = {
     OrderStatus.NO_SHOW: "Order #{id} is closed. I'm happy to help you place a new order.",
 }
 OPEN_STATUSES = (OrderStatus.PENDING_ACCEPTANCE, OrderStatus.ACCEPTED, OrderStatus.PREPARING, OrderStatus.READY)
+
+
+def pending_expiry(biz: BusinessInfo, now: datetime, pickup: datetime, minutes: int) -> datetime:
+    """When an unanswered order expires. The clock starts once the store is open (owners
+    asleep overnight don't lose an evening order), and never runs past the pickup time."""
+    if not minutes:
+        return pickup
+    return min(staffed_from(biz, now) + timedelta(minutes=minutes), pickup)
 
 
 def confirmation_text(order: sqlite3.Row, biz: BusinessInfo) -> str:
@@ -297,10 +302,10 @@ def format_owner_sms(conn: sqlite3.Connection, order: sqlite3.Row, biz: Business
         "SELECT * FROM order_items WHERE order_id = ? ORDER BY id", (order["id"],)
     ).fetchall()
     pickup = local(from_db(order["pickup_time"]), biz.timezone)
-    history = customers.pickup_history(conn, order["customer_id"], order["customer_phone"], exclude_order_id=order["id"])
+    history = customers.pickup_history(conn, order["customer_id"], exclude_order_id=order["id"])
     lines = [
         f"NEW ORDER #{order['id']}",
-        f"Customer: {order['customer_name']}",
+        f"Customer: {cart_svc.one_line(order['customer_name'] or '')}",
         f"Phone: {phone_display(order['customer_phone']) or 'not given'}",
         customers.owner_history_line(history, biz),
         "Source: Facebook Messenger",
@@ -320,7 +325,7 @@ def format_owner_sms(conn: sqlite3.Connection, order: sqlite3.Row, biz: Business
         lines.append(f"Total: {money(order['total_cents'])} (incl. tax {money(order['tax_cents'])})")
     else:
         lines.append(f"Subtotal: {money(order['subtotal_cents'])} (before tax)")
-    lines += ["Payment: At pickup", "Status: Awaiting acceptance", f"Notes: {order['notes'] or 'None'}"]
+    lines += ["Payment: At pickup", "Status: Awaiting acceptance", f"Notes: {cart_svc.one_line(order['notes'] or '') or 'None'}"]
     if order["needs_review"]:
         lines.append("REVIEW: custom design or large order, please check details.")
     lines += ["", f"Reply YES {order['id']} to accept or NO {order['id']} to decline."]

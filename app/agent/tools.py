@@ -104,6 +104,23 @@ TOOLS: list[dict] = [
 ]
 
 
+TOPPING_CATEGORY = "bubble_tea"
+
+
+def _topping_offer(conn, item_id: str) -> str | None:
+    """Owner: no drink comes with a topping, but offer them once, leading with tapioca pearls."""
+    item = menu.get_item(conn, item_id)
+    if item is None or item["category"] != TOPPING_CATEGORY:
+        return None
+    mods = menu.get_modifiers(conn, item_id)
+    lead = next((m for m in mods if "tapioca" in m["name"].lower()), mods[0] if mods else None)
+    if lead is None:
+        return None
+    return (f"No toppings were added. Offer toppings once for this drink, leading with {lead['name']} "
+            f"(+{money(lead['price_delta_cents'])}, modifier_id {lead['id']}), which goes with almost every drink. "
+            "Add one only if the customer says yes; if they say no, don't offer again.")
+
+
 # The owners' rule: the bot never gives discounts, so nothing it writes for the team may suggest one.
 DISCOUNT_WORDS = re.compile(
     r"\b(discount\w*|coupons?|promo(?:tion)?s?|price ?match\w*|for free|on the house)\b"
@@ -293,7 +310,10 @@ def _dispatch(ctx: ToolContext, name: str, a: dict) -> dict:
         return _cart_json(ctx)
     if name == "add_to_cart":
         view = cart_svc.add_item(conn, cid, str(a["item_id"]), _whole(a["quantity"], low=1, high=100), a.get("modifier_ids") or None, a.get("details") or None)
-        return {"ok": True, "cart": _cart_json(ctx, view)}
+        out = {"ok": True, "cart": _cart_json(ctx, view)}
+        if not a.get("modifier_ids") and (tip := _topping_offer(conn, str(a["item_id"]))):
+            out["next_step"] = tip
+        return out
     if name == "update_cart_item":
         view = cart_svc.update_item(conn, cid, _whole(a["line_id"], "line_id"), _whole(a["quantity"], high=100), a.get("modifier_ids"), a.get("details"))
         return {"ok": True, "cart": _cart_json(ctx, view)}

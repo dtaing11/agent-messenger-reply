@@ -592,7 +592,7 @@ def create_admin_app() -> FastAPI:
             (conv["id"],),
         ).fetchall() if conv else []
         return page(request, "customer.html", user, c=c, conv=conv, orders=orders, msgs=list(reversed(msgs)),
-                    history=customers.pickup_history(conn, customer_id, c["phone"]))
+                    history=customers.pickup_history(conn, customer_id))
 
     @app.post("/admin/customers/{customer_id}/bot")
     async def customer_bot(customer_id: int, request: Request, conn=Depends(get_db), user=Depends(admin_user)):

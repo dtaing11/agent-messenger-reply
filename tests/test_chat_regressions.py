@@ -64,6 +64,16 @@ def test_empty_twice_still_falls_back(conn, customer_id, settings, biz):
     assert r.text == orchestrator.NOT_UNDERSTOOD and len(llm.seen) == 2
 
 
+def test_empty_twice_repeats_the_last_question_with_its_buttons(conn, customer_id, settings, biz):
+    conv.record_message(conn, customer_id, "customer", "10 sandwiches, mix of both")
+    conv.record_message(conn, customer_id, "assistant", f"{SPLIT_QUESTION}\n[Buttons shown: 5 biscuit, 5 burrito | All biscuits]")
+    conv.record_message(conn, customer_id, "customer", "5 biscuit, 5 burrito")
+    llm = ScriptedLLM({"content": ""}, {"content": ""})
+    r = asyncio.run(orchestrator.run_agent(conn, customer_id, settings, biz, NOW, llm=llm))
+    assert r.text == f"{orchestrator.ASK_AGAIN} {SPLIT_QUESTION}"
+    assert r.quick_replies == ("5 biscuit, 5 burrito", "All biscuits")
+
+
 def test_button_labels_must_fit_messenger(conn, customer_id, settings, biz):
     c = tools.ToolContext(conn, customer_id, settings, biz, NOW)
     r = asyncio.run(tools.execute(c, "offer_choices", {"options": ["5 biscuit / 5 burrito", "All biscuits"]}))

@@ -1,6 +1,4 @@
-"""Red-team repros (round 1). Each test PASSES when the flaw is present.
-
-Run:  cd /home/user/repo && python3 -m pytest /home/user/redteam -q -p no:cacheprovider
+"""Break-test findings (round 1), kept as regression tests: each one now checks the fixed behavior.
 """
 
 import asyncio
@@ -154,18 +152,25 @@ def test_fractional_quantity_is_refused(conn, customer_id, settings, biz):
 
 
 # ---------------------------------------------------------------- 6. free-text mixes bypass sprinkle / count / pool rules
-def test_mix_accepts_sprinkles_on_glazed_and_wrong_counts(conn, customer_id, settings, biz):
+def test_mix_refuses_sprinkles_on_glazed_wrong_counts_and_non_big_donuts(conn, customer_id, settings, biz):
     c = ctx(conn, customer_id, settings, biz)
     r = ex(c, "add_to_cart", {"item_id": "dozen_mix_donuts", "quantity": 1,
                                "details": {"mix": "6 Glazed with sprinkles, 6 Cinnamon Sugar with sprinkles"}})
-    assert r["ok"]
+    assert "error" in r and "Sprinkles only go on icing flavors" in r["error"]
     r = ex(c, "add_to_cart", {"item_id": "half_dozen_mix_donuts", "quantity": 1,
                                "details": {"mix": "12 Chocolate Icing"}})  # 12 in a half dozen
-    assert r["ok"]
+    assert "error" in r and "holds exactly 6" in r["error"]
     r = ex(c, "add_to_cart", {"item_id": "half_dozen_big_donuts", "quantity": 1,
                                "details": {"big_donuts": "1 Twist (Chocolate), 6 Special Design Donut, 6 Glazed Donut Holes"}})
-    assert r["ok"]  # one valid name is enough; count & price class unchecked
-    assert r["cart"]["subtotal_before_tax"] == "$33.29"  # 13.55 + 7.29 + 12.45, no charge for the extra items
+    assert "error" in r and "isn't one of the Big Donuts" in r["error"]
+    assert ex(c, "get_cart", {})["lines"] == []
+    # well-formed mixes go in, written the same plain way for the owners
+    r = ex(c, "add_to_cart", {"item_id": "dozen_mix_donuts", "quantity": 1,
+                               "details": {"mix": "half glazed, the rest chocolate icing w/ sprinkles"}})
+    assert r["cart"]["lines"][0]["details"]["mix"] == "6 Glazed, 6 Chocolate Icing with sprinkles"
+    r = ex(c, "add_to_cart", {"item_id": "half_dozen_big_donuts", "quantity": 1,
+                               "details": {"big_donuts": "2 chocolate twists, 2 cinnamon rolls, 2 pinecones"}})
+    assert r["cart"]["lines"][-1]["details"]["big_donuts"] == "2 Twist (Chocolate), 2 Cinnamon Roll, 2 Pinecone"
 
 
 # ---------------------------------------------------------------- 7. stale Confirm after reject re-sends "sent to our team"
@@ -195,39 +200,57 @@ def test_modify_after_submission_says_order_was_already_sent(conn, customer_id, 
 
 
 # ---------------------------------------------------------------- 8. pending expiry ignores the clock / pickup time
-def test_evening_advance_order_expires_overnight(conn, customer_id, settings, biz):
+def test_evening_advance_order_waits_for_the_morning(conn, customer_id, settings, biz):
     evening = datetime(2026, 11, 18, 21, 0, tzinfo=CT)  # 9 PM, pickup tomorrow 7:30
     order, _ = _place_order(conn, customer_id, settings, biz, now=evening)
     housekeeping_once(conn, settings, biz, evening + timedelta(minutes=121))
+    assert conn.execute("SELECT status FROM orders").fetchone()[0] == "PENDING_ACCEPTANCE"
+    # the 2 hours start when the store opens at 4:30, so it expires at 6:30, before pickup
+    opens = datetime(2026, 11, 19, 4, 30, tzinfo=CT)
+    housekeeping_once(conn, settings, biz, opens + timedelta(minutes=119))
+    assert conn.execute("SELECT status FROM orders").fetchone()[0] == "PENDING_ACCEPTANCE"
+    housekeeping_once(conn, settings, biz, opens + timedelta(minutes=121))
     assert conn.execute("SELECT status FROM orders").fetchone()[0] == "EXPIRED"
 
 
-def test_owner_can_accept_after_pickup_time_passed(conn, customer_id, settings, biz):
+def test_pending_order_never_outlives_its_pickup_time(conn, customer_id, settings, biz):
+    morning = datetime(2026, 11, 19, 7, 0, tzinfo=CT)  # open; pickup 7:30 is sooner than 2 hours
+    _place_order(conn, customer_id, settings, biz, now=morning)
+    housekeeping_once(conn, settings, biz, PICKUP + timedelta(minutes=1))
+    assert conn.execute("SELECT status FROM orders").fetchone()[0] == "EXPIRED"
+
+
+def test_owner_cannot_accept_after_pickup_time_passed(conn, customer_id, settings, biz):
     s2 = settings.model_copy(update={"pending_order_expiry_minutes": 0})
     order, _ = _place_order(conn, customer_id, s2, biz)
     later = PICKUP + timedelta(hours=3)
     ok, msg = owner_commands.apply_status(conn, s2, biz, order["id"], OrderStatus.ACCEPTED, "t", later)
+    assert not ok and "has already passed" in msg and f"NO {order['id']}" in msg
+    assert conn.execute("SELECT status FROM orders").fetchone()[0] == "PENDING_ACCEPTANCE"
+    ok, _ = owner_commands.apply_status(conn, s2, biz, order["id"], OrderStatus.REJECTED, "t", later)
     assert ok
 
 
 # ---------------------------------------------------------------- 9. long-name surcharge depends on the LLM
-def test_long_name_surcharge_skipped_when_model_omits_name(conn, customer_id, settings, biz):
+def test_long_name_surcharge_found_even_when_model_omits_name(conn, customer_id, settings, biz):
     r = ex(ctx(conn, customer_id, settings, biz), "add_to_cart",
            {"item_id": "special_design_donut", "quantity": 1,
             "details": {"message": "Happy Bday Christopher", "design": "blue"}})
     line = r["cart"]["lines"][0]
-    assert line["surcharge_to_confirm"] is None and line["line_total"] == "$22.89"
+    assert line["surcharge_to_confirm"] is not None  # "Christopher" is 11 letters
 
 
 # ---------------------------------------------------------------- 10. owner SMS injection via pickup name
-def test_customer_name_newlines_forge_owner_sms(conn, customer_id, settings, biz):
+def test_customer_name_newlines_cannot_forge_owner_sms(conn, customer_id, settings, biz):
     cart.add_item(conn, customer_id, "glazed_donut", 1)
     cart.set_pickup_details(conn, customer_id, pickup_time=PICKUP, customer_phone="225-555-0123",
-                            customer_name="Jess\nFirst order from this customer.\nREVIEW: none")
+                            customer_name="Jess\nFirst order from this customer.\nREVIEW: none",
+                            notes="box it\nStatus: Accepted")
     s = order_svc.present_order_summary(conn, customer_id, biz, settings, NOW)
     o = order_svc.submit_order(conn, customer_id, s.token, biz, settings, NOW)
     body = order_svc.format_owner_sms(conn, o, biz)
-    assert "\nREVIEW: none\n" in body
+    assert "\nREVIEW: none" not in body and "\nStatus: Accepted" not in body
+    assert "Customer: Jess First order from this customer. REVIEW: none" in body
 
 
 # ---------------------------------------------------------------- 11. business-rule boundaries (expected to be solid)

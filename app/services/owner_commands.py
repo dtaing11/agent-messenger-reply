@@ -99,6 +99,12 @@ def apply_status(conn: sqlite3.Connection, settings: Settings, biz: BusinessInfo
     other owners know. Returns (ok, message for the owner)."""
     if sender is None and from_phone:
         sender = OwnerSender.phone(from_phone)
+    if target == OrderStatus.ACCEPTED:
+        row = conn.execute("SELECT status, pickup_time FROM orders WHERE id = ?", (order_id,)).fetchone()
+        if row and row["status"] == OrderStatus.PENDING_ACCEPTANCE and from_db(row["pickup_time"]) <= now:
+            when = local(from_db(row["pickup_time"]), biz.timezone)
+            return False, (f"Order #{order_id}'s pickup time ({when:%b} {when.day}, {when:%-I:%M %p}) has already passed, "
+                           f"so it can't be accepted. Reply NO {order_id} to decline it.")
     try:
         order = order_svc.transition_order(conn, order_id, target, actor=actor)
     except InvalidTransition as exc:
@@ -109,7 +115,7 @@ def apply_status(conn: sqlite3.Connection, settings: Settings, biz: BusinessInfo
 
     reply = f"Order #{order_id} {DONE_WORDS[target]}."
     if target == OrderStatus.NO_SHOW:
-        h = customers.pickup_history(conn, order["customer_id"], order["customer_phone"])
+        h = customers.pickup_history(conn, order["customer_id"])
         reply += (f" {order['customer_name']} now has {h.no_shows} missed pickup(s) on record. "
                   "You'll get a heads-up if they order again. (The customer isn't told.)")
     elif notify.order_update_text(order, target, biz):

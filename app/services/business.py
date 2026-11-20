@@ -98,6 +98,24 @@ class PickupValidation:
     suggestions: tuple[datetime, ...] = ()
 
 
+def staffed_from(biz: BusinessInfo, now: datetime) -> datetime:
+    """When someone is next at the store to see a new order: now during opening hours,
+    otherwise the next opening time (an order sent at 9 PM waits for the morning)."""
+    local = now.astimezone(biz.tz)
+    for offset in range(15):
+        day = local.date() + timedelta(days=offset)
+        hours = biz.hours_on(day)
+        if not hours:
+            continue
+        opens = datetime.combine(day, hours[0], tzinfo=biz.tz)
+        closes = datetime.combine(day, hours[1], tzinfo=biz.tz)
+        if local < opens:
+            return opens
+        if local < closes:
+            return local
+    return local  # no hours configured: start the clock now
+
+
 def validate_pickup_time(biz: BusinessInfo, pickup: datetime, now: datetime, min_days_ahead: int = 0,
                          notice_reason: str | None = None) -> PickupValidation:
     """Check a pickup time against hours, closures, lead time and the booking horizon.

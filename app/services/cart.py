@@ -108,11 +108,18 @@ def _pool_selection(conn: sqlite3.Connection, item: sqlite3.Row, c: custom_items
     raw = " ".join(str(details.get(c.key) or details.get(c.label) or details.get("selection") or "").split())
     question = (f"Which {c.count} {c.label} would you like? Pick any mix of: " + "; ".join(labels) + "."
                 if labels else f"Which {c.label} would you like?")
-    if not raw or not any(n.lower() in raw.lower() for n in names):
+    low = raw.lower()
+    if not raw or not (any(n.lower() in low for n in names) or any(w in low for w in custom_items.ANY_MIX)):
         raise custom_items.MissingDetails([c.key], [question])
     if len(raw) > 200:
         raise CartError("Please keep the donut selection short, like: 2 Twist (Chocolate), 2 Cinnamon Roll, 2 Pinecone.")
-    return raw
+    pool = [(r["name"], [o for ch in custom_items.parse_choices(r["choices"]) if not ch.is_pool for o in ch.options])
+            for r in menu.pool_items(conn, c.pool_category, c.pool_price_cents)]
+    others = [r["name"] for r in conn.execute("SELECT name FROM menu_items WHERE archived = 0") if r["name"] not in names]
+    try:
+        return custom_items.check_pool_mix(raw, c, pool, others)
+    except custom_items.MixError as exc:
+        raise CartError(str(exc)) from exc
 
 
 def _normalize_details(conn: sqlite3.Connection, item: sqlite3.Row, details: dict | None) -> str:
@@ -225,6 +232,11 @@ def clear_cart(conn: sqlite3.Connection, customer_id: int) -> CartView:
     return view_cart(conn, customer_id)
 
 
+def one_line(text: str) -> str:
+    """Customer text that goes into an owner alert: one line, no control characters."""
+    return " ".join("".join(ch if ch.isprintable() else " " for ch in str(text)).split())
+
+
 def set_pickup_details(
     conn: sqlite3.Connection,
     customer_id: int,
@@ -242,11 +254,13 @@ def set_pickup_details(
         except phone.PhoneError as exc:
             raise CartError(str(exc)) from exc
     if customer_name is not None:
-        customer_name = customer_name.strip()
+        customer_name = one_line(customer_name)  # a newline could fake extra lines in the owner alert
         if not (1 <= len(customer_name) <= 80):
             raise CartError("Please give a pickup name between 1 and 80 characters.")
-    if notes is not None and len(notes) > 500:
-        raise CartError("Notes must be 500 characters or fewer.")
+    if notes is not None:
+        notes = one_line(notes)
+        if len(notes) > 500:
+            raise CartError("Notes must be 500 characters or fewer.")
     with transaction(conn):
         cart = get_or_create_cart(conn, customer_id)
         conn.execute(

@@ -10,7 +10,7 @@
        First message: {{ c.created_at|localtime }}</p>
     <p>Orders: {{ history.orders }} · Picked up: {{ history.picked_up }} ·
        No-shows: {% if history.no_shows %}<span class="badge down">{{ history.no_shows }}</span>{% else %}0{% endif %}</p>
-    <p class="small muted">Owner-only. Counts include orders placed with the same phone number from another Messenger account.</p>
+    <p class="small muted">Owner-only. Counts only this Messenger account's orders (not other accounts that gave the same phone number, since anyone can type a number).</p>
   </article>
   <article>
     <header><strong>Bot for this customer</strong></header>

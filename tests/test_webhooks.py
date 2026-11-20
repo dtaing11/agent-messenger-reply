@@ -93,7 +93,7 @@ def test_other_page_ignored(client, settings):
 
 def test_health(client):
     r = client.get("/health")
-    assert r.status_code == 200 and r.json()["status"] == "ok"
+    assert r.status_code == 200 and r.json() == {"status": "ok"}  # nothing about the queue in public
 
 
 def test_docs_not_exposed(client):

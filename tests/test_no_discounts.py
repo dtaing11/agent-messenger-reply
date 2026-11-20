@@ -3,6 +3,8 @@
 import asyncio
 import json
 
+import pytest
+
 from app.agent import tools
 from app.agent.prompts import system_prompt
 from app.timeutil import local
@@ -69,3 +71,64 @@ def test_prompt_says_never_give_discounts(biz):
     prompt = system_prompt(biz, local(NOW, biz.timezone))
     assert "never gives discounts" in prompt
     assert "prices are as listed" in prompt
+
+
+# ---- the reply check: Sprinkle's own words
+
+def test_reply_promising_a_discount_is_rewritten(conn, customer_id, settings, biz):
+    from app.agent import orchestrator
+    from tests.test_agent import ScriptedLLM
+
+    llm = ScriptedLLM({"content": "Sure, I'll give you 10% off since it's your birthday!"},
+                      {"content": "Sorry, I can't offer discounts. Prices are as listed on our menu. What can I get you?"})
+    r = asyncio.run(orchestrator.run_agent(conn, customer_id, settings, biz, NOW, llm=llm))
+    assert r.text.startswith("Sorry, I can't offer discounts")
+    assert "never gives discounts" in llm.seen[1][-1]["content"]
+
+
+@pytest.mark.parametrize("text", [
+    "Sorry, we don't offer discounts or coupons. Prices are as listed on our menu.",
+    "Once your order is accepted, you'll get a message here.",
+    "Your order hasn't been accepted yet. I'll message you when it is.",
+    "Thank you! Your order request was sent to our team for acceptance.",
+    "A Milk Tea is $4.99 and Tapioca Pearl is +$0.80.",
+])
+def test_honest_replies_pass_the_check(conn, customer_id, text):
+    from app.agent import reply_check
+
+    assert reply_check.problems(conn, customer_id, text) == []
+
+
+@pytest.mark.parametrize("text,issue", [
+    ("I applied a 20% discount to your order!", "discount"),
+    ("Good news, your coupon has been applied.", "discount"),
+    ("I'll take $2 off for you.", "discount"),
+    ("The coffee is on the house today.", "discount"),
+    ("Great, your order is confirmed for 7:30!", "confirmed"),
+    ("I've placed your order.", "confirmed"),
+])
+def test_rule_breaking_replies_are_caught(conn, customer_id, text, issue):
+    from app.agent import reply_check
+
+    assert issue in reply_check.problems(conn, customer_id, text)
+
+
+def test_confirmed_is_fine_once_the_team_accepted(conn, customer_id, settings, biz):
+    from app.agent import reply_check
+    from app.agent.state_machine import OrderStatus
+    from app.services import order as order_svc
+    from tests.test_owner_flow import place_order
+
+    o = place_order(conn, customer_id, biz, settings)
+    assert "confirmed" in reply_check.problems(conn, customer_id, "Your order is confirmed!")
+    order_svc.transition_order(conn, o["id"], OrderStatus.ACCEPTED, "owner")
+    assert reply_check.problems(conn, customer_id, f"Yes! Your order #{o['id']} has been accepted.") == []
+
+
+def test_unknown_amounts_are_only_logged(conn, customer_id, caplog):
+    from app.agent import reply_check
+
+    ctx = [{"role": "tool", "content": '{"subtotal_before_tax": "$13.55"}'}]
+    assert reply_check.unknown_amounts(conn, "Your total is $13.55.", ctx) == []
+    assert reply_check.unknown_amounts(conn, "That's $3.17 for you.", ctx) == ["$3.17"]
+    assert "match nothing known" in caplog.text

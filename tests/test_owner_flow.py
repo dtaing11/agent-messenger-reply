@@ -17,7 +17,7 @@ from app.main import create_app
 from app.services import cart, customers, notify, owner_commands
 from app.services import order as order_svc
 from app.services.menu import seed_menu
-from app.timeutil import local, utcnow
+from app.timeutil import local, to_db, utcnow
 from app.workers import notifications, queue
 from app.workers.message_worker import MessageProcessor, housekeeping_once, run_once
 from tests.conftest import NOW, ROOT
@@ -129,13 +129,13 @@ def test_noshow_and_warning_on_next_order(conn, customer_id, biz, settings):
     assert "HEADS UP: this customer didn't pick up 1 past order" in sms and f"#{o['id']}" in sms
 
 
-def test_noshow_matched_by_phone_across_accounts(conn, customer_id, biz, settings):
+def test_noshow_stays_with_the_messenger_account_not_the_phone(conn, customer_id, biz, settings):
     o = place_order(conn, customer_id, biz, settings, phone="225-555-0199")
     order_svc.transition_order(conn, o["id"], OrderStatus.ACCEPTED, "owner")
     order_svc.transition_order(conn, o["id"], OrderStatus.NO_SHOW, "owner")
-    other = new_customer(conn, "PSID-OTHER")
-    h = customers.pickup_history(conn, other, "+12255550199")
-    assert h.no_shows == 1
+    other = new_customer(conn, "PSID-OTHER")  # someone else who gives the same number
+    assert customers.pickup_history(conn, other).no_shows == 0
+    assert customers.pickup_history(conn, customer_id).no_shows == 1
 
 
 def test_picked_up_and_fixing_a_mistaken_noshow(conn, customer_id, biz, settings):
@@ -278,9 +278,15 @@ def post_sms(client, body: dict, token="tw-token", path="/webhooks/sms"):
                        headers={"X-Twilio-Signature": sig, "Content-Type": "application/x-www-form-urlencoded"})
 
 
+def _pickup_tomorrow(conn, order_id):
+    conn.execute("UPDATE orders SET pickup_time = ?, expires_at = NULL WHERE id = ?",
+                 (to_db(utcnow() + timedelta(days=1)), order_id))
+
+
 def test_sms_webhook_owner_command(sms_client, conn, customer_id, biz):
     client, s = sms_client
     o = place_order(conn, customer_id, biz, s)
+    _pickup_tomorrow(conn, o["id"])  # the webhook runs on the real clock
     r = post_sms(client, {"From": OWNER1, "To": "+15559990000", "Body": f"YES {o['id']}", "MessageSid": "SMx"})
     assert r.status_code == 200 and r.headers["content-type"].startswith("application/xml")
     assert f"Order #{o['id']} accepted" in r.text
@@ -374,6 +380,7 @@ def test_orders_and_customer_pages(logged_in, settings, biz):  # noqa: F811
     conn = connect(settings.database_path)
     cid = get_or_create_customer(conn, "PAGE1", "PSID55")["id"]
     o = place_order(conn, cid, biz, settings)
+    _pickup_tomorrow(conn, o["id"])  # the portal runs on the real clock
     r = logged_in.get("/admin/orders")
     assert "(225) 555-0123" in r.text and "Accept" in r.text
     r = logged_in.post(f"/admin/orders/{o['id']}/status", data={"target": "ACCEPTED"}, headers={"HX-Request": "true"})
@@ -471,9 +478,10 @@ def test_bubble_tea_flavors_and_toppings(conn, customer_id):
         cart.add_item(conn, customer_id, "milk_tea", 1)
     assert "Taro Milk Tea" in exc.value.questions[0] and "Oolong" not in exc.value.questions[0]
     mods = {m["name"]: m["id"] for m in menu.get_modifiers(conn, "milk_tea")}
-    v = cart.add_item(conn, customer_id, "milk_tea", 2, [mods["Tapioca Pearl"], mods["Coffee Jelly"]], {"flavor": "taro"})
+    v = cart.add_item(conn, customer_id, "milk_tea", 2, [mods["Tapioca Pearl"], mods["Coffee Jelly"]],
+                      {"flavor": "taro", "sweetness": "Regular"})
     line = v.lines[0]
-    assert line.details == {"flavor": "Taro Milk Tea"} and line.unit_price_cents == 499 + 80 + 125
+    assert line.details == {"flavor": "Taro Milk Tea", "sweetness": "Regular"} and line.unit_price_cents == 499 + 80 + 125
     assert line.line_total_cents == 2 * (499 + 80 + 125)
     for item, price in (("green_tea", 499), ("smoothie", 599), ("iced_coffee", 399)):
         assert menu.get_item(conn, item)["price_cents"] == price

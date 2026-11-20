@@ -47,6 +47,9 @@ services:
     depends_on:
       api:
         condition: service_healthy
+    # Its own network: cloudflared (on "private") can't reach the portal even if a tunnel
+    # route were pointed at it. It shares only the data volume with the other services.
+    networks: [portal]
 
   worker:
     <<: *app
@@ -75,3 +78,4 @@ services:
 
 networks:
   private:
+  portal:

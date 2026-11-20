@@ -42,6 +42,28 @@ class MessengerSendError(Exception):
         self.window_closed = window_closed
 
 
+# An order alert is only worth acting on while the order is still in these states.
+ACTIONABLE = {"new_order": ("PENDING_ACCEPTANCE",), "pickup_check": ("ACCEPTED", "PREPARING", "READY")}
+STATUS_WORDS = {"ACCEPTED": "accepted", "REJECTED": "declined", "CANCELLED": "cancelled", "EXPIRED": "expired",
+                "PREPARING": "being prepared", "READY": "ready", "COMPLETED": "picked up", "NO_SHOW": "marked as a no-show"}
+
+
+def still_current(conn: sqlite3.Connection, row: sqlite3.Row) -> tuple[str, list[list[str]] | None]:
+    """The body and buttons to send now. An alert sent late (held while an owner's Messenger
+    window was closed, or retried) about an order someone already decided goes out as an
+    update, without Accept/Decline buttons."""
+    buttons = json.loads(row["buttons"]) if row["buttons"] else None
+    wanted = ACTIONABLE.get(row["type"])
+    if not wanted or not row["order_id"]:
+        return row["body"], buttons
+    order = conn.execute("SELECT status FROM orders WHERE id = ?", (row["order_id"],)).fetchone()
+    if order is None or order["status"] in wanted:
+        return row["body"], buttons
+    now_is = STATUS_WORDS.get(order["status"], order["status"].replace("_", " ").lower())
+    return (f"Update: order #{row['order_id']} is already {now_is}, so there's nothing to do. "
+            f"The earlier alert was:\n\n{row['body']}"), None
+
+
 async def _default_fb_sender(settings: Settings, psid: str, body: str, buttons: list[list[str]] | None) -> str:
     """Owner alert on Messenger. UPDATE: a message the owner didn't just ask for, inside their window."""
     client = MessengerClient(settings)
@@ -104,11 +126,12 @@ async def send_due(conn: sqlite3.Connection, settings: Settings, now: datetime, 
             conn.execute("UPDATE notifications SET status = 'failed', last_error = ? WHERE id = ?", (WINDOW_CLOSED, row["id"]))
             counts["held"] += 1
             continue
+        body, buttons = still_current(conn, row)
         try:
             if fb:
-                sid = await fb_sender(settings, row["recipient"], row["body"], json.loads(row["buttons"]) if row["buttons"] else None)
+                sid = await fb_sender(settings, row["recipient"], body, buttons)
             else:
-                sid = await sender(settings, row["recipient"], row["body"], _status_callback(settings))
+                sid = await sender(settings, row["recipient"], body, _status_callback(settings))
         except Exception as exc:  # noqa: BLE001
             if getattr(exc, "window_closed", False):
                 conn.execute("UPDATE notifications SET status = 'failed', last_error = ? WHERE id = ?", (WINDOW_CLOSED, row["id"]))

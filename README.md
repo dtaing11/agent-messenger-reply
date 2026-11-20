@@ -34,13 +34,19 @@ order updates on Messenger, a menu editor, and customer profiles with pickup his
 | Owner texts via Twilio with retries; delivery status callback | done |
 | Owner text commands: `YES 12`, `NO 12`, `READY 12`, `PICKED 12`, `NOSHOW 12`, `ORDERS`, `PAUSE`, `RESUME`, `HELP` | done |
 | Customer Messenger updates on accept / decline / ready / expiry (within Meta's 24 h window) | done |
-| Pickup check: owners are asked "picked up?" after each pickup time; no-shows kept per customer (owner-only) and flagged on their next order | done |
+| Pickup check: owners are asked "picked up?" after each pickup time; no-shows kept per Messenger account (owner-only, never matched by phone number) and flagged on their next order | done |
 | Customer phone number collected with name and pickup time | done |
 | Special Design Donut must be ordered by the day before pickup (not a full 24 hours; checked on every pickup time and summary) | done |
 | 3 AM text to the owners on the pickup day listing orders placed on an earlier day (`OWNER_REMINDER_HOUR`) | done |
 | Fresh start after 12 quiet hours: the AI sees only the new messages; an unfinished cart is set aside and offered back once (`SESSION_IDLE_HOURS`) | done |
 | Short menu answers on phones: per-item prices from `browse_menu`, one level at a time, tap-to-pick quick replies | done |
-| Owner alerts on Facebook Messenger: owners link their account with a one-time code (portal → Owner alerts), tap Accept/Decline, Picked up/No-show, or reply with the text commands; texts are the backup | done |
+| Owner alerts on Facebook Messenger: owners link their account with a one-time 8-character code (portal → Owner alerts) and someone approves it there; then they tap Accept/Decline, Picked up/No-show, or reply with an exact command like `YES 12`; texts are the backup | done |
+| Linking safety: 5 wrong codes per account or 20 overall lock linking for an hour (the overall limit also cancels every open code and warns the owners) | done |
+| Owner commands are exact: the order number is always required, and anything else ("ok see you at 5") changes nothing | done |
+| No discounts through the bot: no tool takes a price, order notes can't mention one, and Sprinkle's replies are checked for discount promises and fake "confirmed" claims (one rewrite, then a safe reply) | done |
+| Milk Tea and Green Tea ask how sweet (Less sweet, Regular, More sweet); no drink comes with a topping, and Sprinkle offers toppings once, leading with tapioca pearls | done |
+| Free-text mixes are checked: counts must add up to the box, sprinkles only on icing flavors, Big Donuts only from the $2.09 donuts | done |
+| Each reply's cart changes are all or nothing: an error part way through is undone, so a retry never adds items twice | done |
 | Meta's 24-hour rule for owner alerts: daily 👍 check-in sent inside the window; undeliverable alerts are held and sent when the owner next writes, and texted if no owner can be reached | done |
 | Menu editor in the portal (prices, items, add-ons, categories, flavors) | done |
 | Developer portal | done (see below) |
@@ -112,7 +118,7 @@ Each is configurable in `.env` (or `data/*.json`) so the answer doesn't need a c
 | When to ask owners "picked up?" | 30 min after pickup time | `PICKUP_CHECK_AFTER_MINUTES` (`0` = never) |
 | Store hours, holidays, lead time | **Confirmed:** 4:30 AM–12:30 PM every day, no holiday closures. Assumed: 30 min lead; 14 days ahead; 15 min slots | `data/business.json` |
 | Charge tax in the summary? | **Confirmed: no.** Summaries and owner SMS say prices are before tax and remind the customer tax is added at pickup | `TAX_RATE_BPS=0` |
-| Pending order expiry | Unanswered orders expire after 120 min | `PENDING_ORDER_EXPIRY_MINUTES` (`0` = never) |
+| Pending order expiry | Unanswered orders expire 120 min after the store is open (an evening order waits for the morning), and never later than the pickup time. Owners can't accept an order whose pickup time has passed. | `PENDING_ORDER_EXPIRY_MINUTES` (`0` = only at the pickup time) |
 | Customer cancellation | Allowed while pending; after acceptance only the owner can cancel | `CUSTOMER_CAN_CANCEL_ACCEPTED` |
 | Owner phones | **Confirmed: two.** Every number gets the order SMS and may send commands | `OWNER_PHONE_NUMBERS` (comma-separated) |
 | Staff reply by hand? | Yes, and a manual reply pauses the bot for that customer | `PAUSE_BOT_ON_STAFF_REPLY` |
