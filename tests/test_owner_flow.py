@@ -454,3 +454,20 @@ def test_editor_save_keeps_multi_choices(conn):
     menu_admin.update_item(conn, "icing_sprinkles_donut", {"name": "Icing/Sprinkles Donut", "price": "1.45", "available": "on"})
     after = menu.get_item(conn, "icing_sprinkles_donut")
     assert after["choices"] == before and after["price_cents"] == 145
+
+
+def test_bubble_tea_flavors_and_toppings(conn, customer_id):
+    from app.services import menu
+
+    seed_menu(conn, ROOT / "data/menu.json")
+    with pytest.raises(cart.DetailsNeeded) as exc:
+        cart.add_item(conn, customer_id, "milk_tea", 1)
+    assert "Taro Milk Tea" in exc.value.questions[0] and "Oolong" not in exc.value.questions[0]
+    mods = {m["name"]: m["id"] for m in menu.get_modifiers(conn, "milk_tea")}
+    v = cart.add_item(conn, customer_id, "milk_tea", 2, [mods["Tapioca Pearl"], mods["Coffee Jelly"]], {"flavor": "taro"})
+    line = v.lines[0]
+    assert line.details == {"flavor": "Taro Milk Tea"} and line.unit_price_cents == 499 + 80 + 125
+    assert line.line_total_cents == 2 * (499 + 80 + 125)
+    for item, price in (("green_tea", 499), ("smoothie", 599), ("iced_coffee", 399)):
+        assert menu.get_item(conn, item)["price_cents"] == price
+        assert len(menu.get_modifiers(conn, item)) == 7
