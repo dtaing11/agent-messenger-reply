@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Orders{% endblock %}
+{% block content %}
+<h2>Orders</h2>
+{% if orders %}
+<div class="overflow-auto">
+<table class="striped">
+  <thead><tr><th>#</th><th>Name</th><th>Pickup</th><th class="num">Total</th><th>Status</th><th>Placed</th></tr></thead>
+  <tbody>{% for o in orders %}
+    <tr><td>{{ o.id }}</td><td>{{ o.customer_name }}{% if o.needs_review %} <span class="badge degraded">review</span>{% endif %}</td>
+        <td>{{ o.pickup_time|localtime }}</td><td class="num">{{ o.total_cents|money }}</td>
+        <td>{{ o.status|replace('_', ' ')|title }}</td><td>{{ o.created_at|localtime }}</td></tr>
+  {% endfor %}</tbody>
+</table>
+</div>
+{% else %}<p class="muted">No orders yet.</p>{% endif %}
+{% endblock %}

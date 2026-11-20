@@ -27,6 +27,8 @@ def settings(tmp_path) -> Settings:
         meta_app_id="APP1",
         owner_phone_numbers=["+15550000001", "+15550000002"],
         tax_rate_bps=0,
+        bot_mode="live",
+        master_key_path=tmp_path / "keys/master.key",
     )
 
 

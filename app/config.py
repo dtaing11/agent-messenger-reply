@@ -7,7 +7,7 @@ developer portal (Phase 9) will later layer versioned runtime settings on top of
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -63,6 +63,16 @@ class Settings(BaseSettings):
     embedding_model: str = "BAAI/bge-small-en-v1.5"
     rag_top_k: int = 5
 
+    # Runtime / portal
+    # "paused": messages are recorded but the bot never replies. Start paused until setup is done.
+    bot_mode: Literal["paused", "live"] = "paused"
+    public_base_url: str = ""  # e.g. https://orders.example.com (the tunnel hostname)
+    master_key_path: Path = Path("./data/keys/master.key")  # encryption key for stored credentials
+    admin_session_hours: int = Field(12, ge=1, le=168)
+    admin_host: str = "127.0.0.1"
+    admin_port: int = 8001
+    cloudflared_metrics_ports: Annotated[list[int], NoDecode] = Field(default_factory=lambda: [20241, 20242, 20243, 20244, 20245])
+
     # Worker
     worker_poll_seconds: float = 0.5
     worker_max_attempts: int = Field(8, ge=1)
@@ -70,9 +80,9 @@ class Settings(BaseSettings):
     worker_concurrency: int = Field(4, ge=1, le=32)
     historical_import_enabled: bool = False
 
-    @field_validator("owner_phone_numbers", mode="before")
+    @field_validator("owner_phone_numbers", "cloudflared_metrics_ports", mode="before")
     @classmethod
-    def _split_phones(cls, v):
+    def _split_csv(cls, v):
         if isinstance(v, str):
             return [p.strip() for p in v.split(",") if p.strip()]
         return v

@@ -1,4 +1,8 @@
-"""FastAPI entry point. Only /webhooks/* should be exposed through the Cloudflare Tunnel."""
+"""Public listener (port 8000): Messenger webhooks and a minimal health check only.
+
+This is the only app the Cloudflare Tunnel should point at. The developer portal is a
+separate app (app.admin.app) on a localhost-only listener.
+"""
 
 import logging
 from contextlib import asynccontextmanager
@@ -9,6 +13,7 @@ from app.config import get_settings
 from app.database.connection import connect, migrate
 from app.deps import get_db
 from app.services.menu import seed_menu
+from app.settings.secret_store import SecretStore
 from app.webhooks import messenger
 from app.workers import queue
 
@@ -19,6 +24,7 @@ log = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     settings = get_settings()
     app.state.db_path = settings.database_path
+    app.state.secret_store = SecretStore.from_path(settings.master_key_path)
     conn = connect(settings.database_path)
     applied = migrate(conn)
     if applied:

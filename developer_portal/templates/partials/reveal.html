@@ -1,0 +1,4 @@
+<div class="result good">
+  <p>{% if generated %}New verify token saved. {% endif %}{% if value %}Copy it into Meta if you're setting the webhook up by hand:{% else %}No verify token yet. Click "Generate new".{% endif %}</p>
+  {% if value %}<p><code id="vt">{{ value }}</code> <button type="button" class="secondary outline small" data-copy="vt">Copy</button></p>{% endif %}
+</div>

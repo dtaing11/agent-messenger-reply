@@ -13,6 +13,7 @@ COPY requirements.txt .
 RUN pip install -r requirements.txt
 
 COPY app ./app
+COPY developer_portal ./developer_portal
 
 RUN mkdir -p /app/data && chown -R app:app /app
 USER app

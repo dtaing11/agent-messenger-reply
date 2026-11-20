@@ -1,0 +1,21 @@
+.muted { color: var(--pico-muted-color); }
+.small, small { font-size: 0.85rem; }
+.good { color: #1e8e3e; }
+.bad { color: #c5221f; }
+.narrow { max-width: 28rem; margin: 2rem auto; }
+.inline { display: inline; margin: 0; }
+.actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.actions button { width: auto; }
+button.small { padding: 0.25rem 0.6rem; font-size: 0.85rem; }
+.result { margin-top: 1rem; padding: 0.75rem 1rem; border-radius: var(--pico-border-radius); border: 1px solid currentColor; }
+.result p { margin: 0; }
+.result ul { margin: 0.5rem 0 0; }
+.badge { display: inline-block; padding: 0.1rem 0.5rem; border-radius: 1rem; font-size: 0.8rem; font-weight: 600; vertical-align: middle; }
+.badge.healthy { background: #e6f4ea; color: #137333; }
+.badge.down { background: #fce8e6; color: #a50e0e; }
+.badge.degraded { background: #fef7e0; color: #8a5300; }
+.badge.unconfigured, .badge.unknown { background: #eceff1; color: #455a64; }
+.busy { display: none; margin-left: 0.5rem; }
+.busy.htmx-request { display: inline; }
+td.num, th.num { text-align: right; }
+article header small { margin-left: 0.5rem; }

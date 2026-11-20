@@ -30,7 +30,29 @@ webhook, durable queue, SQLite schema, cart, deterministic totals and the order 
 | LLM agent (OpenRouter) | **Phase 5**: a fixed placeholder reply is sent for now |
 | RAG (FastEmbed + Qdrant + FTS5 retrieval) | Phase 3 |
 | Twilio sending + owner SMS commands | Phase 6 (outbox rows are already written) |
-| Developer portal | Phase 9 |
+| Developer portal | done (first version, see below) |
+
+## Developer portal
+
+A private web page for setting everything up without editing files:
+**http://127.0.0.1:8001/admin/** (localhost only, never exposed through the tunnel).
+
+- **First run:** the portal prints a one-time setup code (also saved to `data/bootstrap_code.txt`,
+  deleted after use). Open `/admin/setup`, enter it, and create your admin account.
+- **Integrations:** paste your Meta, OpenRouter and Twilio details. Credentials are encrypted
+  (AES-GCM, key in `MASTER_KEY_PATH`) and never shown again. **Detect tunnel** fills in the
+  public URL from a running `cloudflared` quick tunnel. **Connect automatically** checks the
+  tunnel, sets the Meta app's webhook to your callback URL and subscribes your Page.
+- **Overview:** bot on/off, worker heartbeat, queue, last webhook, integration status
+  (refreshes every 10 s). The bot starts **paused** and won't reply until you turn it on.
+- **Business:** owner phones, tax, order expiry, large-order flag, staff-reply pause.
+- Saved values apply on the next message, with no restart. Values saved in the portal
+  override `.env`.
+
+Security: Argon2id passwords, server-side sessions, CSRF on every change, login lockout,
+strict CSP (no inline scripts, no CDNs; HTMX and Pico CSS are vendored), audit log without
+secret values. Not yet built from the plan: multiple users/roles, versioned config rollback,
+backups page, log viewer.
 
 ## Run locally
 
@@ -39,8 +61,8 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements-dev.txt
 cp .env.example .env          # set META_VERIFY_TOKEN, META_APP_SECRET, etc.
 pytest -q
-uvicorn app.main:app --reload             # API on :8000
-python -m app.workers.message_worker      # worker, in another terminal
+python -m app.run_dev                     # webhook app :8000 + portal :8001 + worker
+cloudflared tunnel --url http://localhost:8000   # public URL for Meta (in another terminal)
 ```
 
 ## Run on the M1 Mac with Docker
@@ -81,7 +103,11 @@ Each is configurable in `.env` (or `data/*.json`) so the answer doesn't need a c
 
 ```text
 app/
-  main.py                  FastAPI app (+ /health)
+  main.py                  public webhook app (+ /health), port 8000
+  admin/                   developer portal app (auth, pages), port 8001
+  settings/                runtime settings + encrypted secret store
+  integrations/checks.py   Meta/OpenRouter/Twilio tests, automatic Meta connection
+  run_dev.py               runs both apps + worker in one process
   config.py                env-based settings
   agent/state_machine.py   order + conversation state machines
   webhooks/messenger.py    verify, signature, dedup, enqueue
@@ -90,6 +116,7 @@ app/
   integrations/messenger.py  Send API client
   services/                menu, cart, pricing, business hours, orders, conversations
   database/                connection, migration runner, migrations/*.sql
+developer_portal/          Jinja2 templates + vendored HTMX/Pico CSS
 data/                      real menu.json, business.json (hours still placeholder; DB files are git-ignored)
 tests/                     pytest suite (uses tests/fixtures/menu.json, not the real menu)
 ```

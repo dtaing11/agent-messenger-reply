@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Log in{% endblock %}
+{% block content %}
+<article class="narrow">
+  <h2>Log in</h2>
+  {% if created %}<p class="good">Account created. Log in to continue.</p>{% endif %}
+  {% if error %}<p class="bad" role="alert">{{ error }}</p>{% endif %}
+  <form method="post" action="/admin/login">
+    <label>Username <input name="username" required value="{{ username or '' }}" autocomplete="username"></label>
+    <label>Password <input type="password" name="password" required autocomplete="current-password"></label>
+    <button type="submit">Log in</button>
+  </form>
+</article>
+{% endblock %}

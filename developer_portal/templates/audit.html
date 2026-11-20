@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Audit log{% endblock %}
+{% block content %}
+<h2>Audit log</h2>
+<p class="muted">Every admin action. Credential values are never recorded.</p>
+<div class="overflow-auto">
+<table class="striped">
+  <thead><tr><th>When</th><th>Who</th><th>Action</th><th>Target</th><th>Outcome</th></tr></thead>
+  <tbody>{% for e in events %}<tr><td>{{ e.created_at|localtime }}</td><td>{{ e.actor }}</td><td>{{ e.action }}</td><td>{{ e.target or '' }}</td><td>{{ e.outcome }}</td></tr>{% endfor %}</tbody>
+</table>
+</div>
+{% endblock %}

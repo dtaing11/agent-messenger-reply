@@ -8,10 +8,22 @@ POSTBACK_CONFIRM = "CONFIRM_ORDER:"
 POSTBACK_MODIFY = "MODIFY_ORDER"
 
 
+_shared_http: httpx.AsyncClient | None = None
+
+
+def _http_client() -> httpx.AsyncClient:
+    global _shared_http
+    if _shared_http is None:
+        _shared_http = httpx.AsyncClient(timeout=10.0)
+    return _shared_http
+
+
 class MessengerClient:
+    """Cheap to construct per job (pins that job's settings); shares one HTTP connection pool."""
+
     def __init__(self, settings: Settings, http: httpx.AsyncClient | None = None):
         self._settings = settings
-        self._http = http or httpx.AsyncClient(timeout=10.0)
+        self._http = http or _http_client()
 
     @property
     def _url(self) -> str:

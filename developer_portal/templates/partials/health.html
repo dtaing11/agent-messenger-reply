@@ -1,0 +1,54 @@
+<section class="grid">
+  <article>
+    <header>Bot</header>
+    {% if h.bot_mode == 'live' %}
+      <p><span class="badge healthy">Live</span> Replying to customers automatically.</p>
+      <form hx-post="/admin/bot/mode" hx-target="#bot-result"><input type="hidden" name="mode" value="paused">
+        <button class="secondary">Pause the bot</button></form>
+    {% else %}
+      <p><span class="badge unconfigured">Paused</span> Messages are saved, but nobody gets an automatic reply.</p>
+      <form hx-post="/admin/bot/mode" hx-target="#bot-result"><input type="hidden" name="mode" value="live">
+        <button>Turn the bot on</button></form>
+    {% endif %}
+    <div id="bot-result"></div>
+  </article>
+  <article>
+    <header>Worker</header>
+    <p>{% with st=h.worker.status %}{% include "partials/badge.html" %}{% endwith %}
+       Last heartbeat {{ h.worker.age|ago }}</p>
+    <p class="muted">Queue: {% for k, v in h.queue.items() %}{{ k }} {{ v }}{% if not loop.last %}, {% endif %}{% else %}empty{% endfor %}
+      {% if h.oldest_pending_age %}<br>Oldest waiting: {{ h.oldest_pending_age|ago }}{% endif %}</p>
+    {% if h.queue.get('failed') %}
+      <form hx-post="/admin/jobs/retry-failed" hx-target="#retry-result"><button class="secondary outline small">Retry failed messages</button></form>
+      <div id="retry-result"></div>
+    {% endif %}
+  </article>
+  <article>
+    <header>Orders</header>
+    <p><strong>{{ h.orders_pending }}</strong> waiting for acceptance</p>
+    <p class="muted">Owner texts: {{ h.sms_pending }} waiting to send{% if h.sms_failed %}, <span class="bad">{{ h.sms_failed }} failed</span>{% endif %}<br>
+       (Texts start sending once Twilio is added.)</p>
+  </article>
+</section>
+<section class="grid">
+  <article>
+    <header>Messenger</header>
+    {% with st=h.integrations.meta.status %}{% include "partials/badge.html" %}{% endwith %}
+    <p class="muted">{{ h.integrations.meta.detail }}</p>
+    <p>Last message received: {{ h.last_webhook|localtime }}<br>
+       Last Meta verification: {{ h.last_verification|localtime }}
+       {% if h.last_signature_failure %}<br><span class="bad">Rejected a message {{ h.last_signature_failure.updated_at|localtime }}: {{ h.last_signature_failure.value }}</span>{% endif %}</p>
+    {% if h.callback_url %}<p class="muted">Callback URL: <code>{{ h.callback_url }}</code></p>{% endif %}
+  </article>
+  <article>
+    <header>OpenRouter (AI)</header>
+    {% with st=h.integrations.openrouter.status %}{% include "partials/badge.html" %}{% endwith %}
+    <p class="muted">{{ h.integrations.openrouter.detail }}</p>
+  </article>
+  <article>
+    <header>Twilio (owner texts)</header>
+    {% with st=h.integrations.twilio.status %}{% include "partials/badge.html" %}{% endwith %}
+    <p class="muted">{{ h.integrations.twilio.detail }}</p>
+  </article>
+</section>
+<p class="muted small">Disk free: {{ h.disk_free_pct }}% · refreshes every 10 seconds</p>
