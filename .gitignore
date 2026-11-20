@@ -8,3 +8,6 @@ data/*.db-*
 data/qdrant/
 data/history/
 *.log
+data/keys/
+data/bootstrap_code.txt
+keys/

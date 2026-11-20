@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Business{% endblock %}
+{% block content %}
+<h2>Business settings</h2>
+<article>
+  <form hx-post="/admin/business" hx-target="#biz-result">
+    <div class="grid">
+      <label>Tax shown in summaries (%)
+        <input name="tax_rate_percent" type="number" step="0.01" min="0" max="50" value="{{ '%.2f'|format(s.tax_rate_bps / 100) }}">
+        <small class="muted">0 = don't add tax; summaries remind customers prices are before tax.</small></label>
+      <label>Unanswered orders expire after (minutes)
+        <input name="pending_order_expiry_minutes" type="number" min="0" value="{{ s.pending_order_expiry_minutes }}">
+        <small class="muted">0 = never expire.</small></label>
+      <label>Flag orders over ($)
+        <input name="large_order_threshold" type="number" step="0.01" min="0" value="{{ '%.2f'|format(s.large_order_threshold_cents / 100) }}"></label>
+    </div>
+    <label>Owner phone numbers <small class="muted">(one per line)</small>
+      <textarea name="owner_phone_numbers" rows="2">{{ s.owner_phone_numbers|join('\n') }}</textarea></label>
+    <label><input type="checkbox" name="pause_bot_on_staff_reply" role="switch" {% if s.pause_bot_on_staff_reply %}checked{% endif %}>
+      Pause the bot for a customer when staff reply by hand</label>
+    <label><input type="checkbox" name="customer_can_cancel_accepted" role="switch" {% if s.customer_can_cancel_accepted %}checked{% endif %}>
+      Customers can cancel after you accept</label>
+    <button type="submit">Save</button>
+  </form>
+  <div id="biz-result"></div>
+</article>
+
+<article>
+  <header><strong>Store</strong></header>
+  <p>{{ biz.store_name }}{% if biz.landmark %}, {{ biz.landmark }}{% endif %} · {{ biz.address }} · {{ biz.raw.get('phone', '') }}
+    {% if biz.maps_url %}· <a href="{{ biz.maps_url }}" target="_blank" rel="noopener">Map</a>{% endif %}</p>
+  <p>Hours:
+    {% for day, h in biz.hours.items() %}{{ day[:3]|title }} {% if h %}{{ h[0].strftime('%-I:%M %p') }}–{{ h[1].strftime('%-I:%M %p') }}{% else %}closed{% endif %}{% if not loop.last %} · {% endif %}{% endfor %}</p>
+  <p class="muted small">Pickup needs {{ biz.pickup.min_lead_minutes }} min notice, up to {{ biz.pickup.max_days_ahead }} days ahead. Hours and address are edited in <code>data/business.json</code> for now.</p>
+</article>
+
+<article>
+  <header><strong>Menu</strong> <small class="muted">({{ items|length }} items shown to customers)</small></header>
+  <p>Change prices, add items and manage categories on the <a href="/admin/menu">Menu</a> page.</p>
+</article>
+{% endblock %}

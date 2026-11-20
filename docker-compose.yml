@@ -1,5 +1,5 @@
 # Runs natively on an M1 Mac (all images are multi-arch with linux/arm64 variants).
-#   docker compose up -d                      # api + worker
+#   docker compose up -d                      # api + worker + developer portal (127.0.0.1:8001/admin/)
 #   docker compose --profile tunnel up -d     # + Cloudflare Tunnel (needs CLOUDFLARE_TUNNEL_TOKEN)
 #   docker compose --profile rag up -d        # + Qdrant (Phase 3)
 
@@ -10,8 +10,10 @@ x-app: &app
     DATABASE_PATH: /app/data/database.db
     MENU_PATH: /app/data/menu.json
     BUSINESS_PATH: /app/data/business.json
+    MASTER_KEY_PATH: /app/keys/master.key
   volumes:
     - ./data:/app/data
+    - ./keys:/app/keys   # credential encryption key, kept outside the data folder
   restart: unless-stopped
   networks: [private]
 
@@ -26,6 +28,25 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+
+  admin:
+    <<: *app
+    # Developer portal: localhost only. Never route this through the tunnel.
+    command: ["uvicorn", "app.admin.app:app", "--host", "0.0.0.0", "--port", "8001"]
+    ports:
+      - "127.0.0.1:8001:8001"
+    environment:
+      DATABASE_PATH: /app/data/database.db
+      MENU_PATH: /app/data/menu.json
+      BUSINESS_PATH: /app/data/business.json
+      MASTER_KEY_PATH: /app/keys/master.key
+      ADMIN_PORT: "8001"
+    volumes:
+      - ./data:/app/data
+      - ./keys:/app/keys
+    depends_on:
+      api:
+        condition: service_healthy
 
   worker:
     <<: *app

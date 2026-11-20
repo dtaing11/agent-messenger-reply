@@ -12,8 +12,9 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import PlainTextResponse
 
-from app.config import Settings, get_settings
-from app.deps import get_db
+from app.config import Settings
+from app.deps import get_db, get_runtime_settings
+from app.settings.runtime import set_marker
 from app.workers import queue
 
 log = logging.getLogger(__name__)
@@ -33,10 +34,12 @@ def verify_webhook(
     mode: str = Query("", alias="hub.mode"),
     token: str = Query("", alias="hub.verify_token"),
     challenge: str = Query("", alias="hub.challenge"),
-    settings: Settings = Depends(get_settings),
+    conn=Depends(get_db),
+    settings: Settings = Depends(get_runtime_settings),
 ):
     expected = settings.meta_verify_token.get_secret_value()
     if mode == "subscribe" and expected and hmac.compare_digest(token, expected):
+        set_marker(conn, "meta.last_verification", "ok")
         return challenge
     raise HTTPException(status_code=403, detail="verification failed")
 
@@ -57,9 +60,10 @@ def classify(event: dict) -> tuple[str, str] | None:
 
 
 @router.post("/webhooks/messenger")
-async def receive_webhook(request: Request, settings: Settings = Depends(get_settings), conn=Depends(get_db)):
+async def receive_webhook(request: Request, settings: Settings = Depends(get_runtime_settings), conn=Depends(get_db)):
     body = await request.body()
     if not verify_signature(settings.meta_app_secret.get_secret_value(), body, request.headers.get("x-hub-signature-256")):
+        set_marker(conn, "meta.last_signature_failure", "invalid signature" if settings.meta_app_secret.get_secret_value() else "app secret not configured")
         raise HTTPException(status_code=403, detail="invalid signature")
     try:
         data = json.loads(body)

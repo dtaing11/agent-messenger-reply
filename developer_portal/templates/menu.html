@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block title %}Menu{% endblock %}
+{% block content %}
+<h2>Menu</h2>
+<p class="muted">Prices are before tax. Changes apply to the bot right away, no restart needed.
+  If a price changes while a customer is looking at a summary, they're shown the new total before they can confirm.</p>
+{% if saved %}<div class="result good" role="status"><p>✓ {{ saved }}</p></div>{% endif %}
+{% if error %}<div class="result bad" role="status"><p>✗ {{ error }}</p></div>{% endif %}
+
+<article>
+  <form hx-post="/admin/menu/categories" hx-target="#cat-add-result" class="row-form">
+    <input name="name" placeholder="New category name, e.g. Seasonal" maxlength="80" required aria-label="New category name">
+    <button type="submit">Add category</button>
+  </form>
+  <div id="cat-add-result"></div>
+  <p class="small muted">
+    <a href="/admin/menu/export">Download menu.json</a> (backup of the current menu)
+    {% if archived %}· {{ archived }} removed item(s) kept for old carts{% endif %}
+  </p>
+</article>
+
+{% for group in tree %}
+{% set c = group.cat %}
+<article id="cat-{{ c.id }}">
+  <header class="cat-header">
+    <form hx-post="/admin/menu/categories/{{ c.id }}" hx-target="#cat-result-{{ c.id }}" class="row-form">
+      <input name="name" value="{{ c.name }}" maxlength="80" required aria-label="Category name">
+      <button type="submit" name="action" value="rename" class="secondary">Rename</button>
+      <button type="submit" name="action" value="up" class="secondary outline small" title="Move up" {% if loop.first %}disabled{% endif %}>↑</button>
+      <button type="submit" name="action" value="down" class="secondary outline small" title="Move down" {% if loop.last %}disabled{% endif %}>↓</button>
+      {% if not group["items"] %}<button type="submit" name="action" value="delete" class="secondary outline small" hx-confirm="Delete the category {{ c.name }}?">Delete</button>{% endif %}
+    </form>
+    <div id="cat-result-{{ c.id }}"></div>
+  </header>
+
+  {% for entry in group["items"] %}
+  {% set it = entry.row %}
+  <form id="item-{{ it.id }}" class="item-row{% if not it.available %} hidden-item{% endif %}" hx-post="/admin/menu/items/{{ it.id }}" hx-target="#item-result-{{ it.id }}">
+    <div class="item-grid">
+      <input name="name" value="{{ it.name }}" maxlength="80" required aria-label="Item name">
+      <label class="price"><span>$</span><input name="price" type="number" step="0.01" min="0" max="1000" value="{{ '%.2f'|format(it.price_cents / 100) }}" required aria-label="Price"></label>
+      <select name="category" aria-label="Category">
+        {% for opt in cats %}<option value="{{ opt.id }}" {% if opt.id == it.category %}selected{% endif %}>{{ opt.name }}</option>{% endfor %}
+      </select>
+      <label class="switch"><input type="checkbox" name="available" role="switch" {% if it.available %}checked{% endif %}> Shown</label>
+      <button type="submit" name="action" value="save" class="small">Save</button>
+    </div>
+    <details>
+      <summary class="small muted">More{% for c0 in (it.choices|fromjson or []) %} · {% if c0.pool %}any {{ c0.count }} {{ c0.label }} ({{ c0.pool.price_cents|money }} items){% elif c0.mix %}mix of {{ c0.count }}{% else %}{{ c0.label|lower }}: {{ c0.options|join(', ') }}{% endif %}{% endfor %}{% if it.custom_rules %} · special order (bot asks for message and design){% endif %}{% if entry.modifiers %} · {{ entry.modifiers|length }} add-on(s){% endif %}</summary>
+      <div class="grid">
+        <label>Sold as <input name="unit_label" value="{{ it.unit_label }}" maxlength="30"><small class="muted">e.g. each, dozen, half dozen</small></label>
+        <label>Max per order <input name="max_quantity" type="number" min="1" max="1000" value="{{ it.max_quantity }}"></label>
+      </div>
+      <label>Description <small class="muted">(helps the bot answer questions)</small>
+        <input name="description" value="{{ it.description }}" maxlength="300"></label>
+      {% set chs = it.choices|fromjson or [] %}
+      {% set ch = chs[0] if chs else None %}
+      {% if chs|length > 1 or (ch and (ch.pool or ch.mix)) %}
+      <div class="small">Customer choices (edit in <code>data/menu.json</code>):
+        <ul>{% for c in chs %}<li>{% if c.pool %}any {{ c.count }} {{ c.label }}: every item in {{ c.pool.category|replace('_', ' ') }} priced {{ c.pool.price_cents|money }} (change an item's price to add or remove it)
+          {% elif c.mix %}{{ c.label }}: a mix of {{ c.count }} from {{ c.options|join(', ') }}
+          {% else %}{{ c.label }}: {{ c.options|join(', ') }}{% if c.not_with %} (not with {% for k, v in c.not_with.items() %}{{ v|join(' or ') }}{% endfor %}){% endif %}{% endif %}</li>{% endfor %}</ul>
+      </div>
+      {% else %}
+      <div class="grid">
+        <label>Customer must choose <input name="choice_label" value="{{ ch.label if ch else 'Flavor' }}" maxlength="30"></label>
+        <label>Options <small class="muted">(comma-separated; leave empty if there's nothing to choose)</small>
+          <input name="choice_options" value="{{ ch.options|join(', ') if ch else '' }}" maxlength="600" placeholder="e.g. Chocolate, Maple"></label>
+      </div>
+      {% endif %}
+      <fieldset>
+        <legend class="small">Add-ons</legend>
+        {% for m in entry.modifiers %}
+        <div class="mod-grid">
+          <input name="mod_{{ m.id }}_name" value="{{ m.name }}" maxlength="80" aria-label="Add-on name">
+          <label class="price"><span>+$</span><input name="mod_{{ m.id }}_price" type="number" step="0.01" min="0" max="1000" value="{{ '%.2f'|format(m.price_delta_cents / 100) }}" aria-label="Add-on price"></label>
+          <label class="switch"><input type="checkbox" name="mod_{{ m.id }}_available" role="switch" {% if m.available %}checked{% endif %}> Offered</label>
+        </div>
+        {% endfor %}
+        <div class="mod-grid">
+          <input name="new_mod_name" placeholder="New add-on, e.g. Extra cheese" maxlength="80" aria-label="New add-on name">
+          <label class="price"><span>+$</span><input name="new_mod_price" type="number" step="0.01" min="0" max="1000" placeholder="0.00" aria-label="New add-on price"></label>
+          <span></span>
+        </div>
+      </fieldset>
+      <button type="submit" name="action" value="remove" class="secondary outline small" hx-confirm="Remove {{ it.name }} from the menu? (Past orders keep their details.) To hide it for now, turn off Shown instead.">Remove item</button>
+    </details>
+    <div id="item-result-{{ it.id }}"></div>
+  </form>
+  {% else %}
+  <p class="muted small">No items yet.</p>
+  {% endfor %}
+
+  <footer>
+    <form hx-post="/admin/menu/items" hx-target="#add-result-{{ c.id }}" class="item-grid add-grid">
+      <input type="hidden" name="category" value="{{ c.id }}">
+      <input name="name" placeholder="New item in {{ c.name }}" maxlength="80" required aria-label="New item name">
+      <label class="price"><span>$</span><input name="price" type="number" step="0.01" min="0" max="1000" placeholder="0.00" required aria-label="New item price"></label>
+      <input name="unit_label" placeholder="each" maxlength="30" aria-label="Sold as">
+      <span></span>
+      <button type="submit" class="small">Add item</button>
+    </form>
+    <div id="add-result-{{ c.id }}"></div>
+  </footer>
+</article>
+{% endfor %}
+
+{% if edited %}
+<article>
+  <header><strong>Start over from the menu file</strong></header>
+  <p class="small muted">Your edits here are kept across restarts. To go back to <code>data/menu.json</code>, re-import it.
+    Items you added here that aren't in the file will be hidden.</p>
+  <form hx-post="/admin/menu/reimport" hx-target="#reimport-result" hx-confirm="Replace the menu with data/menu.json? Your portal changes to those items will be lost.">
+    <button type="submit" class="secondary outline">Re-import data/menu.json</button>
+  </form>
+  <div id="reimport-result"></div>
+</article>
+{% endif %}
+{% endblock %}

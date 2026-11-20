@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% block title %}Integrations{% endblock %}
+{% macro secret_field(name, label, help='') -%}
+  <label>{{ label }}
+    {% if sec[name].configured %}<small class="good">· saved {{ sec[name].updated_at|localtime }}</small>{% else %}<small class="muted">· not set</small>{% endif %}
+    <input type="password" name="{{ name }}" autocomplete="off" placeholder="{{ 'Leave blank to keep the saved value' if sec[name].configured else 'Paste here' }}">
+    {% if help %}<small class="muted">{{ help }}</small>{% endif %}
+  </label>
+{%- endmacro %}
+{% block content %}
+<h2>Integrations</h2>
+<p class="muted">Saved values take effect on the next message, with no restart. Credentials are stored encrypted and are never shown again after saving.</p>
+
+<article id="meta">
+  <header><strong>Facebook Messenger</strong>
+    {% with st=status.meta.status %}{% include "partials/badge.html" %}{% endwith %}
+    <small class="muted">{{ status.meta.detail }}</small></header>
+
+  <details>
+    <summary>Where do I find these?</summary>
+    <ol class="small">
+      <li>Create an app at <a href="https://developers.facebook.com/apps/" target="_blank" rel="noopener">developers.facebook.com/apps</a> and add the Messenger product.</li>
+      <li><b>App ID</b> and <b>App secret</b>: App settings → Basic.</li>
+      <li><b>Page ID</b> and <b>Page access token</b>: Messenger → Messenger API Settings → generate a token for your Page.</li>
+      <li>Ordinary customers need App Review / Advanced Access for <code>pages_messaging</code>. Until then only people with a role on the app can message the bot.</li>
+    </ol>
+  </details>
+
+
+  {% if saved == 'tunnel' %}<div class="result good" role="status"><p>✓ Found your tunnel and saved it: {{ s.public_base_url }}</p></div>{% endif %}
+  {% if saved == 'meta' %}<div class="result good" role="status"><p>✓ Saved. It takes effect on the next message, with no restart.</p></div>{% endif %}
+  {% if error == 'meta' %}<div class="result bad" role="status"><p>✗ That didn't save. Check the values and try again.</p></div>{% endif %}
+  <form id="meta-form" method="post" action="/admin/integrations/meta" hx-post="/admin/integrations/meta" hx-target="#meta-save-result">
+    <input type="hidden" name="csrf_token" value="{{ user.csrf_token }}">
+    <div class="grid">
+      <label>Page ID <input name="meta_page_id" value="{{ s.meta_page_id }}" inputmode="numeric"></label>
+      <label>App ID <input name="meta_app_id" value="{{ s.meta_app_id }}" inputmode="numeric"></label>
+      <label>Graph API version <input name="meta_graph_api_version" value="{{ s.meta_graph_api_version }}"></label>
+    </div>
+    <div class="grid">
+      {{ secret_field('meta_app_secret', 'App secret') }}
+      {{ secret_field('meta_page_access_token', 'Page access token') }}
+    </div>
+    <label>Public URL (your tunnel address)
+      <input name="public_base_url" value="{{ s.public_base_url }}" placeholder="https://something.trycloudflare.com">
+      <small class="muted">Callback URL: <code>{{ callback_url or 'set the public URL first' }}</code></small>
+    </label>
+    <div class="actions">
+      <button type="submit">Save</button>
+      <button type="button" class="secondary" hx-post="/admin/integrations/tunnel/detect" hx-target="#meta-save-result">Detect tunnel</button>
+    </div>
+    <div id="meta-save-result"></div>
+  </form>
+
+  <div class="grid">
+    <div>
+      <p><b>Webhook verify token</b>
+        {% if sec.meta_verify_token.configured %}<small class="good">· saved</small>{% else %}<small class="bad">· not set</small>{% endif %}</p>
+      <div class="actions">
+        <button type="button" class="secondary outline small" hx-post="/admin/integrations/meta/verify-token" hx-vals='{"action": "generate"}' hx-target="#vt-result"
+          hx-confirm="Make a new verify token? If the webhook is already set up in Meta, click Connect automatically again afterwards.">Generate new</button>
+        <button type="button" class="secondary outline small" hx-post="/admin/integrations/meta/verify-token" hx-vals='{"action": "reveal"}' hx-target="#vt-result">Show</button>
+      </div>
+      <div id="vt-result"></div>
+    </div>
+    <div>
+      <p><b>Connect</b></p>
+      <div class="actions">
+        <button type="button" class="secondary" hx-post="/admin/integrations/meta/test" hx-include="#meta-form" hx-target="#meta-result" hx-indicator="#meta-busy">Test credentials</button>
+        <button type="button" hx-post="/admin/integrations/meta/connect" hx-include="#meta-form" hx-target="#meta-result" hx-indicator="#meta-busy">Connect automatically</button>
+      </div>
+      <small class="muted">Saves what you typed above, sets your Meta app's webhook to the callback URL and subscribes your Page to messages.</small>
+      <span id="meta-busy" class="busy">Working…</span>
+    </div>
+  </div>
+  <div id="meta-result"></div>
+</article>
+
+<article id="openrouter">
+  <header><strong>OpenRouter (AI replies)</strong>
+    {% with st=status.openrouter.status %}{% include "partials/badge.html" %}{% endwith %}
+    <small class="muted">{{ status.openrouter.detail }}</small></header>
+
+  {% if saved == 'openrouter' %}<div class="result good" role="status"><p>✓ Saved. It takes effect on the next message, with no restart.</p></div>{% endif %}
+  {% if error == 'openrouter' %}<div class="result bad" role="status"><p>✗ That didn't save. Check the values and try again.</p></div>{% endif %}
+  <form id="or-form" method="post" action="/admin/integrations/openrouter" hx-post="/admin/integrations/openrouter" hx-target="#or-result">
+    <input type="hidden" name="csrf_token" value="{{ user.csrf_token }}">
+    <div class="grid">
+      {{ secret_field('openrouter_api_key', 'API key', 'From openrouter.ai/keys. Set a spending limit there.') }}
+      <label>Model <input name="ai_model" value="{{ s.ai_model }}" placeholder="e.g. google/gemini-2.5-flash-lite"></label>
+      <label>Fallback model <input name="ai_fallback_model" value="{{ s.ai_fallback_model }}"></label>
+    </div>
+    <div class="actions">
+      <button type="submit">Save</button>
+      <button type="button" class="secondary" hx-post="/admin/integrations/openrouter/test" hx-include="#or-form" hx-target="#or-result">Test</button>
+    </div>
+  </form>
+  <small class="muted">The AI assistant isn't switched on yet. Until it is, customers get a fixed "we'll get back to you" reply.</small>
+  <div id="or-result"></div>
+</article>
+
+<article id="twilio">
+  <header><strong>Twilio (texts to owners)</strong>
+    {% with st=status.twilio.status %}{% include "partials/badge.html" %}{% endwith %}
+    <small class="muted">{{ status.twilio.detail }}</small></header>
+
+  {% if saved == 'twilio' %}<div class="result good" role="status"><p>✓ Saved. It takes effect on the next message, with no restart.</p></div>{% endif %}
+  {% if error == 'twilio' %}<div class="result bad" role="status"><p>✗ That didn't save. Check the values and try again.</p></div>{% endif %}
+  <form id="tw-form" method="post" action="/admin/integrations/twilio" hx-post="/admin/integrations/twilio" hx-target="#tw-result">
+    <input type="hidden" name="csrf_token" value="{{ user.csrf_token }}">
+    <div class="grid">
+      <label>Account SID <input name="twilio_account_sid" value="{{ s.twilio_account_sid }}" autocomplete="off"></label>
+      {{ secret_field('twilio_auth_token', 'Auth token') }}
+      <label>Sending number <input name="twilio_phone_number" value="{{ s.twilio_phone_number }}" placeholder="+12255550100"></label>
+    </div>
+    <label>Owner phone numbers <small class="muted">(one per line; every number gets order texts and may reply YES/NO)</small>
+      <textarea name="owner_phone_numbers" rows="2">{{ s.owner_phone_numbers|join('\n') }}</textarea></label>
+    <div class="actions">
+      <button type="submit">Save</button>
+      <button type="button" class="secondary" hx-post="/admin/integrations/twilio/test" hx-include="#tw-form" hx-target="#tw-result">Test (no text is sent)</button>
+      <button type="button" class="secondary" hx-post="/admin/integrations/twilio/connect" hx-include="#tw-form" hx-target="#tw-result">Connect owner replies automatically</button>
+      <button type="button" class="secondary outline" hx-post="/admin/integrations/twilio/test-sms" hx-include="#tw-form" hx-target="#tw-result">Send a test text to owners</button>
+    </div>
+    <p class="small muted">Owners text back: YES 12 / NO 12 (accept or decline), READY 12, PICKED 12 or NOSHOW 12 (after pickup time), ORDERS, PAUSE, RESUME, HELP.
+      US numbers: Twilio requires the sending number to be registered (A2P 10DLC, or toll-free verification) before texts are delivered; a trial account can only text numbers you've verified in Twilio.</p>
+  </form>
+  <div id="tw-result"></div>
+</article>
+{% endblock %}

@@ -19,7 +19,9 @@ from app.agent.state_machine import InvalidTransition, OrderStatus, assert_trans
 from app.config import Settings
 from app.database.connection import transaction
 from app.services import cart as cart_svc
+from app.services import customers, notify
 from app.services.business import BusinessInfo, validate_pickup_time
+from app.services.phone import display as phone_display
 from app.services.pricing import money
 from app.timeutil import from_db, local, to_db
 
@@ -51,6 +53,9 @@ def _detail_lines(details: dict, indent: str) -> list[str]:
         out.append(f"{indent}Name: {details['name']}")
     if details.get("design"):
         out.append(f"{indent}Design: {details['design']}")
+    for k, v in details.items():  # required choices, e.g. flavor
+        if k not in ("message", "name", "design"):
+            out.append(f"{indent}{k.replace('_', ' ').capitalize()}: {v}")
     return out
 
 
@@ -62,7 +67,7 @@ class OrderSummary:
     total_cents: int
 
 
-def _missing_details(view: cart_svc.CartView) -> list[str]:
+def missing_details(view: cart_svc.CartView, require_phone: bool = True) -> list[str]:
     missing = []
     if view.is_empty:
         missing.append("items")
@@ -70,16 +75,19 @@ def _missing_details(view: cart_svc.CartView) -> list[str]:
         missing.append("pickup time")
     if not view.customer_name:
         missing.append("pickup name")
+    if require_phone and not view.customer_phone:
+        missing.append("phone number")
     return missing
 
 
-def _check_ready(view: cart_svc.CartView, biz: BusinessInfo, now: datetime) -> None:
-    missing = _missing_details(view)
+def _check_ready(view: cart_svc.CartView, biz: BusinessInfo, now: datetime, require_phone: bool = True) -> None:
+    missing = missing_details(view, require_phone)
     if missing:
         raise OrderError("Still needed before I can summarize: " + ", ".join(missing) + ".")
     if view.unavailable:
         raise SummaryChanged("No longer available: " + ", ".join(view.unavailable) + ".")
-    pv = validate_pickup_time(biz, view.pickup_time, now)
+    days, notice = view.advance_notice()
+    pv = validate_pickup_time(biz, view.pickup_time, now, days, notice)
     if not pv.ok:
         raise SummaryChanged(pv.reason or "That pickup time is no longer available.")
 
@@ -99,8 +107,13 @@ def render_summary(view: cart_svc.CartView, biz: BusinessInfo) -> str:
         lines.append(f"Subtotal: {money(t.subtotal_cents)} before tax")
     pickup = local(view.pickup_time, biz.timezone)
     lines += [
-        f"Pickup: {pickup:%a %b} {pickup.day} at {pickup:%-I:%M %p} ({biz.location.title()})",
+        f"Pickup: {pickup:%a %b} {pickup.day} at {pickup:%-I:%M %p}",
         f"Name: {view.customer_name}",
+        *([f"Phone: {phone_display(view.customer_phone)}"] if view.customer_phone else []),
+        "",
+        *biz.pickup_location_lines(),
+        "Please make sure this is the store you'll pick up from.",
+        "",
     ]
     if view.notes:
         lines.append(f"Notes: {view.notes}")
@@ -120,7 +133,7 @@ def present_order_summary(
 ) -> OrderSummary:
     """Validate the cart and issue a confirmation token bound to its current version."""
     view = cart_svc.view_cart(conn, customer_id, settings.tax_rate_bps)
-    _check_ready(view, biz, now)
+    _check_ready(view, biz, now, settings.require_customer_phone)
     token = secrets.token_urlsafe(16)
     conn.execute(
         """INSERT INTO confirmation_tokens (token, cart_id, customer_id, cart_version, total_cents, expires_at)
@@ -162,7 +175,7 @@ def submit_order(
             raise ConfirmationInvalid("Your order changed after that summary. Please review the updated one.")
 
         view = cart_svc.view_cart_by_id(conn, tok["cart_id"], settings.tax_rate_bps)
-        _check_ready(view, biz, now)
+        _check_ready(view, biz, now, settings.require_customer_phone)
         if view.totals.total_cents != tok["total_cents"]:
             raise SummaryChanged("Prices changed since your summary. Please review the updated total.")
 
@@ -173,13 +186,14 @@ def submit_order(
             else None
         )
         cur = conn.execute(
-            """INSERT INTO orders (customer_id, cart_id, cart_version, customer_name, location, pickup_time,
+            """INSERT INTO orders (customer_id, cart_id, cart_version, customer_name, customer_phone, location, pickup_time,
                  subtotal_cents, tax_cents, total_cents, status, notes, needs_review, expires_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (customer_id, view.cart_id, view.version, view.customer_name, biz.location, to_db(view.pickup_time),
-             view.totals.subtotal_cents, view.totals.tax_cents, view.totals.total_cents,
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (customer_id, view.cart_id, view.version, view.customer_name, view.customer_phone, biz.location,
+             to_db(view.pickup_time), view.totals.subtotal_cents, view.totals.tax_cents, view.totals.total_cents,
              str(OrderStatus.PENDING_ACCEPTANCE), view.notes, int(needs_review), expires_at),
         )
+        customers.remember_contact(conn, customer_id, view.customer_name, view.customer_phone)
         order_id = cur.lastrowid
         for l in view.lines:
             conn.execute(
@@ -195,12 +209,9 @@ def submit_order(
             (order_id, str(OrderStatus.PENDING_ACCEPTANCE)),
         )
         order = conn.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
-        body = format_owner_sms(conn, order, biz)
-        for phone in settings.owner_phone_numbers:
-            conn.execute(
-                "INSERT INTO notifications (order_id, type, recipient, body, idempotency_key) VALUES (?, 'new_order', ?, ?, ?)",
-                (order_id, phone, body, f"order:{order_id}:new_order:{phone}"),
-            )
+        notify.alert_owners(conn, settings, "new_order", format_owner_sms(conn, order, biz), f"order:{order_id}:new_order",
+                            order_id=order_id, now=now, buttons=[[f"Accept #{order_id}", f"YES {order_id}"],
+                                                                 [f"Decline #{order_id}", f"NO {order_id}"]])
         conn.execute("UPDATE confirmation_tokens SET used_at = ? WHERE token = ?", (to_db(now), token))
         conn.execute(
             "UPDATE carts SET status = 'submitted', updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?",
@@ -213,14 +224,29 @@ def submit_order(
         return order
 
 
+def confirmation_text(order: sqlite3.Row, biz: BusinessInfo) -> str:
+    """Reply after the customer taps Confirm: repeats where to pick up."""
+    pickup = local(from_db(order["pickup_time"]), biz.timezone)
+    return "\n".join([
+        f"Thank you! Order request #{order['id']} has been sent to our team for acceptance. "
+        "I'll message you once they confirm.",
+        "",
+        f"Pickup: {pickup:%a %b} {pickup.day} at {pickup:%-I:%M %p}",
+        *biz.pickup_location_lines(),
+    ])
+
+
 def format_owner_sms(conn: sqlite3.Connection, order: sqlite3.Row, biz: BusinessInfo) -> str:
     items = conn.execute(
         "SELECT * FROM order_items WHERE order_id = ? ORDER BY id", (order["id"],)
     ).fetchall()
     pickup = local(from_db(order["pickup_time"]), biz.timezone)
+    history = customers.pickup_history(conn, order["customer_id"], order["customer_phone"], exclude_order_id=order["id"])
     lines = [
         f"NEW ORDER #{order['id']}",
         f"Customer: {order['customer_name']}",
+        f"Phone: {phone_display(order['customer_phone']) or 'not given'}",
+        customers.owner_history_line(history, biz),
         "Source: Facebook Messenger",
         f"Location: {order['location'].title()}",
         f"Pickup: {pickup:%b} {pickup.day}, {pickup:%-I:%M %p %Z}",

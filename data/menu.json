@@ -1,5 +1,43 @@
 {
-  "_comment": "Town Donut & Breakfast (Denham Springs / Watson) menu, transcribed from the owner's menu board on 2026-11-19. Prices are before tax.",
+  "_comment": "Town Donut & Breakfast (Denham Springs / Watson) menu, transcribed from the owner's menu board on 2026-11-19. Prices are before tax. Twist/Long John flavors and Community Coffee details from the owner, 2026-11-20. Biscuits and burritos are separate items at the same price (owner, 2026-11-20) Big Donuts = every single donut priced $2.09 (owner, 2026-11-20). Icing/Mix flavors and sprinkles rule (icing flavors only) from the owner, 2026-11-20. Bubble tea from the owner's drink board, 2026-11-20 (Oolong Milk Tea not offered for now) Toppings can go on any drink (owner).",
+  "categories": [
+    {
+      "id": "donuts_by_dozen",
+      "name": "Donuts by the Dozen"
+    },
+    {
+      "id": "donuts_by_half_dozen",
+      "name": "Donuts by the Half Dozen"
+    },
+    {
+      "id": "donuts",
+      "name": "Donuts"
+    },
+    {
+      "id": "kolaches",
+      "name": "Kolaches"
+    },
+    {
+      "id": "croissant_sandwiches",
+      "name": "Croissant Sandwiches"
+    },
+    {
+      "id": "biscuit_sandwiches_burritos",
+      "name": "Biscuit Sandwiches & Burritos"
+    },
+    {
+      "id": "drinks",
+      "name": "Drinks"
+    },
+    {
+      "id": "bubble_tea",
+      "name": "Bubble Tea"
+    },
+    {
+      "id": "special_design",
+      "name": "Special Design Donuts"
+    }
+  ],
   "items": [
     {
       "id": "dozen_glazed_donuts",
@@ -26,7 +64,25 @@
       "unit_label": "dozen",
       "price_cents": 1355,
       "max_quantity": 30,
-      "description": ""
+      "description": "A mix of 12 donuts from: Glazed, Blue Icing, Chocolate Icing, Maple Icing, White Icing, Strawberry Icing, Cinnamon Sugar. Icing flavors can have sprinkles (not Glazed or Cinnamon Sugar).",
+      "choices": [
+        {
+          "key": "mix",
+          "label": "Donut mix",
+          "options": [
+            "Glazed",
+            "Blue Icing",
+            "Chocolate Icing",
+            "Maple Icing",
+            "White Icing",
+            "Strawberry Icing",
+            "Cinnamon Sugar"
+          ],
+          "count": 12,
+          "mix": true,
+          "question": "How would you like your 12 donuts mixed? Flavors: Glazed, Blue Icing, Chocolate Icing, Maple Icing, White Icing, Strawberry Icing and Cinnamon Sugar. Icing flavors can have sprinkles. Or we can mix them for you."
+        }
+      ]
     },
     {
       "id": "half_dozen_glazed_donuts",
@@ -53,7 +109,25 @@
       "unit_label": "half dozen",
       "price_cents": 729,
       "max_quantity": 30,
-      "description": ""
+      "description": "A mix of 6 donuts from: Glazed, Blue Icing, Chocolate Icing, Maple Icing, White Icing, Strawberry Icing, Cinnamon Sugar. Icing flavors can have sprinkles (not Glazed or Cinnamon Sugar).",
+      "choices": [
+        {
+          "key": "mix",
+          "label": "Donut mix",
+          "options": [
+            "Glazed",
+            "Blue Icing",
+            "Chocolate Icing",
+            "Maple Icing",
+            "White Icing",
+            "Strawberry Icing",
+            "Cinnamon Sugar"
+          ],
+          "count": 6,
+          "mix": true,
+          "question": "How would you like your 6 donuts mixed? Flavors: Glazed, Blue Icing, Chocolate Icing, Maple Icing, White Icing, Strawberry Icing and Cinnamon Sugar. Icing flavors can have sprinkles. Or we can mix them for you."
+        }
+      ]
     },
     {
       "id": "half_dozen_big_donuts",
@@ -62,7 +136,18 @@
       "unit_label": "half dozen",
       "price_cents": 1245,
       "max_quantity": 30,
-      "description": ""
+      "description": "Any 6 Big Donuts. Big Donuts are all the single donuts priced $2.09; mix as you like.",
+      "choices": [
+        {
+          "key": "big_donuts",
+          "label": "Big Donuts",
+          "count": 6,
+          "pool": {
+            "category": "donuts",
+            "price_cents": 209
+          }
+        }
+      ]
     },
     {
       "id": "glazed_donut",
@@ -80,7 +165,36 @@
       "unit_label": "each",
       "price_cents": 135,
       "max_quantity": 60,
-      "description": ""
+      "description": "Choose a flavor: Glazed, Blue Icing, Chocolate Icing, Maple Icing, White Icing, Strawberry Icing or Cinnamon Sugar. Sprinkles are available on the icing flavors only (not Glazed or Cinnamon Sugar).",
+      "choices": [
+        {
+          "key": "flavor",
+          "label": "Flavor",
+          "options": [
+            "Glazed",
+            "Blue Icing",
+            "Chocolate Icing",
+            "Maple Icing",
+            "White Icing",
+            "Strawberry Icing",
+            "Cinnamon Sugar"
+          ]
+        },
+        {
+          "key": "sprinkles",
+          "label": "Sprinkles",
+          "options": [
+            "Yes",
+            "No"
+          ],
+          "not_with": {
+            "flavor": [
+              "Glazed",
+              "Cinnamon Sugar"
+            ]
+          }
+        }
+      ]
     },
     {
       "id": "cake_donut",
@@ -98,7 +212,17 @@
       "unit_label": "each",
       "price_cents": 179,
       "max_quantity": 60,
-      "description": ""
+      "description": "Long John filled with Bavarian cream. Flavors: Chocolate or Maple.",
+      "choices": [
+        {
+          "key": "flavor",
+          "label": "Flavor",
+          "options": [
+            "Chocolate",
+            "Maple"
+          ]
+        }
+      ]
     },
     {
       "id": "cinnamon_roll",
@@ -125,7 +249,19 @@
       "unit_label": "each",
       "price_cents": 209,
       "max_quantity": 60,
-      "description": ""
+      "description": "Twist donut. Flavors: Cinnamon Glazed, Cinnamon Sugar, Chocolate, Glazed.",
+      "choices": [
+        {
+          "key": "flavor",
+          "label": "Flavor",
+          "options": [
+            "Cinnamon Glazed",
+            "Cinnamon Sugar",
+            "Chocolate",
+            "Glazed"
+          ]
+        }
+      ]
     },
     {
       "id": "apple_fritter",
@@ -299,123 +435,216 @@
       ]
     },
     {
-      "id": "sausage_egg_cheese_biscuit_or_burrito",
-      "name": "Sausage, Egg & Cheese Biscuit or Burrito",
+      "id": "sausage_egg_cheese_biscuit",
+      "name": "Sausage, Egg & Cheese Biscuit",
       "category": "biscuit_sandwiches_burritos",
       "unit_label": "each",
       "price_cents": 365,
       "max_quantity": 30,
-      "description": "Served on a biscuit unless the customer asks for a burrito.",
+      "description": "",
       "modifiers": [
         {
-          "id": "sausage_egg_cheese_biscuit_or_burrito_make_it_a_burrito",
-          "name": "Make it a burrito",
-          "price_delta_cents": 0
-        },
-        {
-          "id": "sausage_egg_cheese_biscuit_or_burrito_extra_sausage",
+          "id": "sausage_egg_cheese_biscuit_extra_sausage",
           "name": "Extra sausage",
           "price_delta_cents": 99
         },
         {
-          "id": "sausage_egg_cheese_biscuit_or_burrito_extra_bacon",
+          "id": "sausage_egg_cheese_biscuit_extra_bacon",
           "name": "Extra bacon",
           "price_delta_cents": 99
         },
         {
-          "id": "sausage_egg_cheese_biscuit_or_burrito_extra_ham",
+          "id": "sausage_egg_cheese_biscuit_extra_ham",
           "name": "Extra ham",
           "price_delta_cents": 99
         },
         {
-          "id": "sausage_egg_cheese_biscuit_or_burrito_extra_egg",
+          "id": "sausage_egg_cheese_biscuit_extra_egg",
           "name": "Extra egg",
           "price_delta_cents": 50
         },
         {
-          "id": "sausage_egg_cheese_biscuit_or_burrito_extra_cheese",
+          "id": "sausage_egg_cheese_biscuit_extra_cheese",
           "name": "Extra cheese",
           "price_delta_cents": 50
         }
       ]
     },
     {
-      "id": "bacon_egg_cheese_biscuit_or_burrito",
-      "name": "Bacon, Egg & Cheese Biscuit or Burrito",
+      "id": "sausage_egg_cheese_burrito",
+      "name": "Sausage, Egg & Cheese Burrito",
       "category": "biscuit_sandwiches_burritos",
       "unit_label": "each",
       "price_cents": 365,
       "max_quantity": 30,
-      "description": "Served on a biscuit unless the customer asks for a burrito.",
+      "description": "",
       "modifiers": [
         {
-          "id": "bacon_egg_cheese_biscuit_or_burrito_make_it_a_burrito",
-          "name": "Make it a burrito",
-          "price_delta_cents": 0
-        },
-        {
-          "id": "bacon_egg_cheese_biscuit_or_burrito_extra_sausage",
+          "id": "sausage_egg_cheese_burrito_extra_sausage",
           "name": "Extra sausage",
           "price_delta_cents": 99
         },
         {
-          "id": "bacon_egg_cheese_biscuit_or_burrito_extra_bacon",
+          "id": "sausage_egg_cheese_burrito_extra_bacon",
           "name": "Extra bacon",
           "price_delta_cents": 99
         },
         {
-          "id": "bacon_egg_cheese_biscuit_or_burrito_extra_ham",
+          "id": "sausage_egg_cheese_burrito_extra_ham",
           "name": "Extra ham",
           "price_delta_cents": 99
         },
         {
-          "id": "bacon_egg_cheese_biscuit_or_burrito_extra_egg",
+          "id": "sausage_egg_cheese_burrito_extra_egg",
           "name": "Extra egg",
           "price_delta_cents": 50
         },
         {
-          "id": "bacon_egg_cheese_biscuit_or_burrito_extra_cheese",
+          "id": "sausage_egg_cheese_burrito_extra_cheese",
           "name": "Extra cheese",
           "price_delta_cents": 50
         }
       ]
     },
     {
-      "id": "ham_egg_cheese_biscuit_or_burrito",
-      "name": "Ham, Egg & Cheese Biscuit or Burrito",
+      "id": "bacon_egg_cheese_biscuit",
+      "name": "Bacon, Egg & Cheese Biscuit",
       "category": "biscuit_sandwiches_burritos",
       "unit_label": "each",
       "price_cents": 365,
       "max_quantity": 30,
-      "description": "Served on a biscuit unless the customer asks for a burrito.",
+      "description": "",
       "modifiers": [
         {
-          "id": "ham_egg_cheese_biscuit_or_burrito_make_it_a_burrito",
-          "name": "Make it a burrito",
-          "price_delta_cents": 0
-        },
-        {
-          "id": "ham_egg_cheese_biscuit_or_burrito_extra_sausage",
+          "id": "bacon_egg_cheese_biscuit_extra_sausage",
           "name": "Extra sausage",
           "price_delta_cents": 99
         },
         {
-          "id": "ham_egg_cheese_biscuit_or_burrito_extra_bacon",
+          "id": "bacon_egg_cheese_biscuit_extra_bacon",
           "name": "Extra bacon",
           "price_delta_cents": 99
         },
         {
-          "id": "ham_egg_cheese_biscuit_or_burrito_extra_ham",
+          "id": "bacon_egg_cheese_biscuit_extra_ham",
           "name": "Extra ham",
           "price_delta_cents": 99
         },
         {
-          "id": "ham_egg_cheese_biscuit_or_burrito_extra_egg",
+          "id": "bacon_egg_cheese_biscuit_extra_egg",
           "name": "Extra egg",
           "price_delta_cents": 50
         },
         {
-          "id": "ham_egg_cheese_biscuit_or_burrito_extra_cheese",
+          "id": "bacon_egg_cheese_biscuit_extra_cheese",
+          "name": "Extra cheese",
+          "price_delta_cents": 50
+        }
+      ]
+    },
+    {
+      "id": "bacon_egg_cheese_burrito",
+      "name": "Bacon, Egg & Cheese Burrito",
+      "category": "biscuit_sandwiches_burritos",
+      "unit_label": "each",
+      "price_cents": 365,
+      "max_quantity": 30,
+      "description": "",
+      "modifiers": [
+        {
+          "id": "bacon_egg_cheese_burrito_extra_sausage",
+          "name": "Extra sausage",
+          "price_delta_cents": 99
+        },
+        {
+          "id": "bacon_egg_cheese_burrito_extra_bacon",
+          "name": "Extra bacon",
+          "price_delta_cents": 99
+        },
+        {
+          "id": "bacon_egg_cheese_burrito_extra_ham",
+          "name": "Extra ham",
+          "price_delta_cents": 99
+        },
+        {
+          "id": "bacon_egg_cheese_burrito_extra_egg",
+          "name": "Extra egg",
+          "price_delta_cents": 50
+        },
+        {
+          "id": "bacon_egg_cheese_burrito_extra_cheese",
+          "name": "Extra cheese",
+          "price_delta_cents": 50
+        }
+      ]
+    },
+    {
+      "id": "ham_egg_cheese_biscuit",
+      "name": "Ham, Egg & Cheese Biscuit",
+      "category": "biscuit_sandwiches_burritos",
+      "unit_label": "each",
+      "price_cents": 365,
+      "max_quantity": 30,
+      "description": "",
+      "modifiers": [
+        {
+          "id": "ham_egg_cheese_biscuit_extra_sausage",
+          "name": "Extra sausage",
+          "price_delta_cents": 99
+        },
+        {
+          "id": "ham_egg_cheese_biscuit_extra_bacon",
+          "name": "Extra bacon",
+          "price_delta_cents": 99
+        },
+        {
+          "id": "ham_egg_cheese_biscuit_extra_ham",
+          "name": "Extra ham",
+          "price_delta_cents": 99
+        },
+        {
+          "id": "ham_egg_cheese_biscuit_extra_egg",
+          "name": "Extra egg",
+          "price_delta_cents": 50
+        },
+        {
+          "id": "ham_egg_cheese_biscuit_extra_cheese",
+          "name": "Extra cheese",
+          "price_delta_cents": 50
+        }
+      ]
+    },
+    {
+      "id": "ham_egg_cheese_burrito",
+      "name": "Ham, Egg & Cheese Burrito",
+      "category": "biscuit_sandwiches_burritos",
+      "unit_label": "each",
+      "price_cents": 365,
+      "max_quantity": 30,
+      "description": "",
+      "modifiers": [
+        {
+          "id": "ham_egg_cheese_burrito_extra_sausage",
+          "name": "Extra sausage",
+          "price_delta_cents": 99
+        },
+        {
+          "id": "ham_egg_cheese_burrito_extra_bacon",
+          "name": "Extra bacon",
+          "price_delta_cents": 99
+        },
+        {
+          "id": "ham_egg_cheese_burrito_extra_ham",
+          "name": "Extra ham",
+          "price_delta_cents": 99
+        },
+        {
+          "id": "ham_egg_cheese_burrito_extra_egg",
+          "name": "Extra egg",
+          "price_delta_cents": 50
+        },
+        {
+          "id": "ham_egg_cheese_burrito_extra_cheese",
           "name": "Extra cheese",
           "price_delta_cents": 50
         }
@@ -464,7 +693,44 @@
       "unit_label": "each",
       "price_cents": 415,
       "max_quantity": 30,
-      "description": ""
+      "description": "",
+      "modifiers": [
+        {
+          "id": "large_milk_coconut_jelly",
+          "name": "Coconut Jelly",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "large_milk_mango_bursting_boba",
+          "name": "Mango Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "large_milk_peach_bursting_boba",
+          "name": "Peach Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "large_milk_passion_bursting_boba",
+          "name": "Passion Fruit Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "large_milk_strawberry_bursting_boba",
+          "name": "Strawberry Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "large_milk_tapioca_pearl",
+          "name": "Tapioca Pearl",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "large_milk_coffee_jelly",
+          "name": "Coffee Jelly",
+          "price_delta_cents": 125
+        }
+      ]
     },
     {
       "id": "medium_milk",
@@ -473,7 +739,44 @@
       "unit_label": "each",
       "price_cents": 249,
       "max_quantity": 30,
-      "description": ""
+      "description": "",
+      "modifiers": [
+        {
+          "id": "medium_milk_coconut_jelly",
+          "name": "Coconut Jelly",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "medium_milk_mango_bursting_boba",
+          "name": "Mango Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "medium_milk_peach_bursting_boba",
+          "name": "Peach Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "medium_milk_passion_bursting_boba",
+          "name": "Passion Fruit Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "medium_milk_strawberry_bursting_boba",
+          "name": "Strawberry Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "medium_milk_tapioca_pearl",
+          "name": "Tapioca Pearl",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "medium_milk_coffee_jelly",
+          "name": "Coffee Jelly",
+          "price_delta_cents": 125
+        }
+      ]
     },
     {
       "id": "small_milk",
@@ -482,7 +785,44 @@
       "unit_label": "each",
       "price_cents": 165,
       "max_quantity": 30,
-      "description": ""
+      "description": "",
+      "modifiers": [
+        {
+          "id": "small_milk_coconut_jelly",
+          "name": "Coconut Jelly",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "small_milk_mango_bursting_boba",
+          "name": "Mango Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "small_milk_peach_bursting_boba",
+          "name": "Peach Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "small_milk_passion_bursting_boba",
+          "name": "Passion Fruit Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "small_milk_strawberry_bursting_boba",
+          "name": "Strawberry Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "small_milk_tapioca_pearl",
+          "name": "Tapioca Pearl",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "small_milk_coffee_jelly",
+          "name": "Coffee Jelly",
+          "price_delta_cents": 125
+        }
+      ]
     },
     {
       "id": "soft_drink",
@@ -491,7 +831,44 @@
       "unit_label": "each",
       "price_cents": 259,
       "max_quantity": 30,
-      "description": ""
+      "description": "",
+      "modifiers": [
+        {
+          "id": "soft_drink_coconut_jelly",
+          "name": "Coconut Jelly",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "soft_drink_mango_bursting_boba",
+          "name": "Mango Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "soft_drink_peach_bursting_boba",
+          "name": "Peach Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "soft_drink_passion_bursting_boba",
+          "name": "Passion Fruit Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "soft_drink_strawberry_bursting_boba",
+          "name": "Strawberry Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "soft_drink_tapioca_pearl",
+          "name": "Tapioca Pearl",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "soft_drink_coffee_jelly",
+          "name": "Coffee Jelly",
+          "price_delta_cents": 125
+        }
+      ]
     },
     {
       "id": "energy_drink",
@@ -500,7 +877,44 @@
       "unit_label": "each",
       "price_cents": 335,
       "max_quantity": 30,
-      "description": ""
+      "description": "",
+      "modifiers": [
+        {
+          "id": "energy_drink_coconut_jelly",
+          "name": "Coconut Jelly",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "energy_drink_mango_bursting_boba",
+          "name": "Mango Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "energy_drink_peach_bursting_boba",
+          "name": "Peach Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "energy_drink_passion_bursting_boba",
+          "name": "Passion Fruit Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "energy_drink_strawberry_bursting_boba",
+          "name": "Strawberry Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "energy_drink_tapioca_pearl",
+          "name": "Tapioca Pearl",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "energy_drink_coffee_jelly",
+          "name": "Coffee Jelly",
+          "price_delta_cents": 125
+        }
+      ]
     },
     {
       "id": "juice_minute_maid",
@@ -509,7 +923,44 @@
       "unit_label": "each",
       "price_cents": 259,
       "max_quantity": 30,
-      "description": ""
+      "description": "",
+      "modifiers": [
+        {
+          "id": "juice_minute_maid_coconut_jelly",
+          "name": "Coconut Jelly",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "juice_minute_maid_mango_bursting_boba",
+          "name": "Mango Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "juice_minute_maid_peach_bursting_boba",
+          "name": "Peach Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "juice_minute_maid_passion_bursting_boba",
+          "name": "Passion Fruit Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "juice_minute_maid_strawberry_bursting_boba",
+          "name": "Strawberry Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "juice_minute_maid_tapioca_pearl",
+          "name": "Tapioca Pearl",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "juice_minute_maid_coffee_jelly",
+          "name": "Coffee Jelly",
+          "price_delta_cents": 125
+        }
+      ]
     },
     {
       "id": "coffee",
@@ -518,7 +969,44 @@
       "unit_label": "each",
       "price_cents": 259,
       "max_quantity": 30,
-      "description": ""
+      "description": "Made with Community Coffee.",
+      "modifiers": [
+        {
+          "id": "coffee_coconut_jelly",
+          "name": "Coconut Jelly",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "coffee_mango_bursting_boba",
+          "name": "Mango Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "coffee_peach_bursting_boba",
+          "name": "Peach Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "coffee_passion_bursting_boba",
+          "name": "Passion Fruit Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "coffee_strawberry_bursting_boba",
+          "name": "Strawberry Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "coffee_tapioca_pearl",
+          "name": "Tapioca Pearl",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "coffee_coffee_jelly",
+          "name": "Coffee Jelly",
+          "price_delta_cents": 125
+        }
+      ]
     },
     {
       "id": "cappuccino",
@@ -527,7 +1015,44 @@
       "unit_label": "each",
       "price_cents": 335,
       "max_quantity": 30,
-      "description": ""
+      "description": "Made with Community Coffee.",
+      "modifiers": [
+        {
+          "id": "cappuccino_coconut_jelly",
+          "name": "Coconut Jelly",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "cappuccino_mango_bursting_boba",
+          "name": "Mango Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "cappuccino_peach_bursting_boba",
+          "name": "Peach Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "cappuccino_passion_bursting_boba",
+          "name": "Passion Fruit Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "cappuccino_strawberry_bursting_boba",
+          "name": "Strawberry Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "cappuccino_tapioca_pearl",
+          "name": "Tapioca Pearl",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "cappuccino_coffee_jelly",
+          "name": "Coffee Jelly",
+          "price_delta_cents": 125
+        }
+      ]
     },
     {
       "id": "water",
@@ -536,7 +1061,44 @@
       "unit_label": "each",
       "price_cents": 165,
       "max_quantity": 30,
-      "description": ""
+      "description": "",
+      "modifiers": [
+        {
+          "id": "water_coconut_jelly",
+          "name": "Coconut Jelly",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "water_mango_bursting_boba",
+          "name": "Mango Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "water_peach_bursting_boba",
+          "name": "Peach Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "water_passion_bursting_boba",
+          "name": "Passion Fruit Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "water_strawberry_bursting_boba",
+          "name": "Strawberry Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "water_tapioca_pearl",
+          "name": "Tapioca Pearl",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "water_coffee_jelly",
+          "name": "Coffee Jelly",
+          "price_delta_cents": 125
+        }
+      ]
     },
     {
       "id": "tummy_yummy",
@@ -545,7 +1107,44 @@
       "unit_label": "each",
       "price_cents": 175,
       "max_quantity": 30,
-      "description": ""
+      "description": "",
+      "modifiers": [
+        {
+          "id": "tummy_yummy_coconut_jelly",
+          "name": "Coconut Jelly",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "tummy_yummy_mango_bursting_boba",
+          "name": "Mango Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "tummy_yummy_peach_bursting_boba",
+          "name": "Peach Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "tummy_yummy_passion_bursting_boba",
+          "name": "Passion Fruit Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "tummy_yummy_strawberry_bursting_boba",
+          "name": "Strawberry Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "tummy_yummy_tapioca_pearl",
+          "name": "Tapioca Pearl",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "tummy_yummy_coffee_jelly",
+          "name": "Coffee Jelly",
+          "price_delta_cents": 125
+        }
+      ]
     },
     {
       "id": "starbucks",
@@ -554,7 +1153,44 @@
       "unit_label": "each",
       "price_cents": 315,
       "max_quantity": 30,
-      "description": ""
+      "description": "",
+      "modifiers": [
+        {
+          "id": "starbucks_coconut_jelly",
+          "name": "Coconut Jelly",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "starbucks_mango_bursting_boba",
+          "name": "Mango Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "starbucks_peach_bursting_boba",
+          "name": "Peach Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "starbucks_passion_bursting_boba",
+          "name": "Passion Fruit Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "starbucks_strawberry_bursting_boba",
+          "name": "Strawberry Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "starbucks_tapioca_pearl",
+          "name": "Tapioca Pearl",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "starbucks_coffee_jelly",
+          "name": "Coffee Jelly",
+          "price_delta_cents": 125
+        }
+      ]
     },
     {
       "id": "prime",
@@ -563,7 +1199,44 @@
       "unit_label": "each",
       "price_cents": 280,
       "max_quantity": 30,
-      "description": ""
+      "description": "",
+      "modifiers": [
+        {
+          "id": "prime_coconut_jelly",
+          "name": "Coconut Jelly",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "prime_mango_bursting_boba",
+          "name": "Mango Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "prime_peach_bursting_boba",
+          "name": "Peach Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "prime_passion_bursting_boba",
+          "name": "Passion Fruit Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "prime_strawberry_bursting_boba",
+          "name": "Strawberry Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "prime_tapioca_pearl",
+          "name": "Tapioca Pearl",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "prime_coffee_jelly",
+          "name": "Coffee Jelly",
+          "price_delta_cents": 125
+        }
+      ]
     },
     {
       "id": "special_design_donut",
@@ -579,11 +1252,253 @@
         "name_free_letters": 7,
         "long_name_surcharge_cents": null,
         "always_review": true,
+        "min_days_ahead": 1,
         "questions": {
           "message": "What would you like written on it? For example \"Happy Birthday\", \"Happy Bday Emma\" or \"Merry Christmas\".",
           "design": "What kind of design are you looking for (theme, colors, decorations)?"
         }
       }
+    },
+    {
+      "id": "milk_tea",
+      "name": "Milk Tea",
+      "category": "bubble_tea",
+      "unit_label": "each",
+      "price_cents": 499,
+      "max_quantity": 20,
+      "description": "Bubble tea. Signature drink: Black Milk Tea. Oolong Milk Tea is not available right now. Toppings (add any number): Coconut Jelly, Mango, Peach, Passion Fruit or Strawberry Bursting Boba, Tapioca Pearl (+$0.80 each), Coffee Jelly (+$1.25).",
+      "choices": [
+        {
+          "key": "flavor",
+          "label": "Flavor",
+          "options": [
+            "Black Milk Tea",
+            "Strawberry Tea",
+            "Mango Milk Tea",
+            "Taro Milk Tea",
+            "Oreo Milk Tea",
+            "Honeydew Milk Tea",
+            "Chocolate Milk Tea",
+            "Watermelon Milk Tea"
+          ]
+        }
+      ],
+      "modifiers": [
+        {
+          "id": "milk_tea_coconut_jelly",
+          "name": "Coconut Jelly",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "milk_tea_mango_bursting_boba",
+          "name": "Mango Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "milk_tea_peach_bursting_boba",
+          "name": "Peach Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "milk_tea_passion_bursting_boba",
+          "name": "Passion Fruit Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "milk_tea_strawberry_bursting_boba",
+          "name": "Strawberry Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "milk_tea_tapioca_pearl",
+          "name": "Tapioca Pearl",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "milk_tea_coffee_jelly",
+          "name": "Coffee Jelly",
+          "price_delta_cents": 125
+        }
+      ]
+    },
+    {
+      "id": "green_tea",
+      "name": "Green Tea",
+      "category": "bubble_tea",
+      "unit_label": "each",
+      "price_cents": 499,
+      "max_quantity": 20,
+      "description": "Bubble tea. Signature drinks: Strawberry Green Tea and Mango Green Tea. Toppings (add any number): Coconut Jelly, Mango, Peach, Passion Fruit or Strawberry Bursting Boba, Tapioca Pearl (+$0.80 each), Coffee Jelly (+$1.25).",
+      "choices": [
+        {
+          "key": "flavor",
+          "label": "Flavor",
+          "options": [
+            "Strawberry Green Tea",
+            "Mango Green Tea",
+            "Passion Fruit Green Tea",
+            "Peach Green Tea",
+            "Raspberry Green Tea",
+            "Green Apple Green Tea",
+            "Pineapple Green Tea"
+          ]
+        }
+      ],
+      "modifiers": [
+        {
+          "id": "green_tea_coconut_jelly",
+          "name": "Coconut Jelly",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "green_tea_mango_bursting_boba",
+          "name": "Mango Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "green_tea_peach_bursting_boba",
+          "name": "Peach Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "green_tea_passion_bursting_boba",
+          "name": "Passion Fruit Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "green_tea_strawberry_bursting_boba",
+          "name": "Strawberry Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "green_tea_tapioca_pearl",
+          "name": "Tapioca Pearl",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "green_tea_coffee_jelly",
+          "name": "Coffee Jelly",
+          "price_delta_cents": 125
+        }
+      ]
+    },
+    {
+      "id": "smoothie",
+      "name": "Smoothie",
+      "category": "bubble_tea",
+      "unit_label": "each",
+      "price_cents": 599,
+      "max_quantity": 20,
+      "description": "Signature drink: Oreo Smoothie. Toppings (add any number): Coconut Jelly, Mango, Peach, Passion Fruit or Strawberry Bursting Boba, Tapioca Pearl (+$0.80 each), Coffee Jelly (+$1.25).",
+      "choices": [
+        {
+          "key": "flavor",
+          "label": "Flavor",
+          "options": [
+            "Strawberry Smoothie",
+            "Mango Smoothie",
+            "Raspberry Smoothie",
+            "Pineapple Smoothie",
+            "Passion Fruit Smoothie",
+            "Peach Smoothie",
+            "Green Apple Smoothie",
+            "Oreo Smoothie"
+          ]
+        }
+      ],
+      "modifiers": [
+        {
+          "id": "smoothie_coconut_jelly",
+          "name": "Coconut Jelly",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "smoothie_mango_bursting_boba",
+          "name": "Mango Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "smoothie_peach_bursting_boba",
+          "name": "Peach Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "smoothie_passion_bursting_boba",
+          "name": "Passion Fruit Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "smoothie_strawberry_bursting_boba",
+          "name": "Strawberry Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "smoothie_tapioca_pearl",
+          "name": "Tapioca Pearl",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "smoothie_coffee_jelly",
+          "name": "Coffee Jelly",
+          "price_delta_cents": 125
+        }
+      ]
+    },
+    {
+      "id": "iced_coffee",
+      "name": "Iced Coffee",
+      "category": "bubble_tea",
+      "unit_label": "each",
+      "price_cents": 399,
+      "max_quantity": 20,
+      "description": "Bubble tea menu. Toppings (add any number): Coconut Jelly, Mango, Peach, Passion Fruit or Strawberry Bursting Boba, Tapioca Pearl (+$0.80 each), Coffee Jelly (+$1.25).",
+      "choices": [
+        {
+          "key": "flavor",
+          "label": "Flavor",
+          "options": [
+            "Caramel Iced Coffee",
+            "Vanilla Iced Coffee"
+          ]
+        }
+      ],
+      "modifiers": [
+        {
+          "id": "iced_coffee_coconut_jelly",
+          "name": "Coconut Jelly",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "iced_coffee_mango_bursting_boba",
+          "name": "Mango Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "iced_coffee_peach_bursting_boba",
+          "name": "Peach Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "iced_coffee_passion_bursting_boba",
+          "name": "Passion Fruit Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "iced_coffee_strawberry_bursting_boba",
+          "name": "Strawberry Bursting Boba",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "iced_coffee_tapioca_pearl",
+          "name": "Tapioca Pearl",
+          "price_delta_cents": 80
+        },
+        {
+          "id": "iced_coffee_coffee_jelly",
+          "name": "Coffee Jelly",
+          "price_delta_cents": 125
+        }
+      ]
     }
   ]
 }

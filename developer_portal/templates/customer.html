@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}{{ c.name or 'Customer' }}{% endblock %}
+{% block content %}
+<p><a href="/admin/customers">← Customers</a></p>
+<h2>{{ c.name or ('Messenger customer …' ~ c.facebook_psid[-4:]) }}</h2>
+<div class="grid">
+  <article>
+    <header><strong>Profile</strong></header>
+    <p>Phone: {{ c.phone|phone or 'not given yet' }}<br>
+       First message: {{ c.created_at|localtime }}</p>
+    <p>Orders: {{ history.orders }} · Picked up: {{ history.picked_up }} ·
+       No-shows: {% if history.no_shows %}<span class="badge down">{{ history.no_shows }}</span>{% else %}0{% endif %}</p>
+    <p class="small muted">Owner-only. Counts include orders placed with the same phone number from another Messenger account.</p>
+  </article>
+  <article>
+    <header><strong>Bot for this customer</strong></header>
+    {% if conv and conv.bot_enabled == 0 %}
+      <p><span class="badge degraded">paused</span> {{ conv.handoff_reason or '' }}</p>
+      <p class="small muted">Reply to them from the Facebook Page inbox. Turn the bot back on when you're done.</p>
+      <button hx-post="/admin/customers/{{ c.id }}/bot" hx-vals='{"enabled": "1"}' hx-target="#bot-result">Resume the bot</button>
+    {% else %}
+      <p><span class="badge healthy">on</span> The bot answers this customer.</p>
+      <button class="secondary outline" hx-post="/admin/customers/{{ c.id }}/bot" hx-vals='{"enabled": "0"}' hx-target="#bot-result">Pause the bot for this customer</button>
+    {% endif %}
+    <div id="bot-result"></div>
+  </article>
+</div>
+
+<article>
+  <header><strong>Orders</strong></header>
+  {% if orders %}
+  <div class="overflow-auto"><table class="striped">
+    <thead><tr><th>#</th><th>Name</th><th>Phone</th><th>Pickup</th><th class="num">Subtotal</th><th>Status</th></tr></thead>
+    <tbody>{% for o in orders %}<tr>
+      <td>{{ o.id }}</td><td>{{ o.customer_name }}</td><td>{{ o.customer_phone|phone }}</td>
+      <td>{{ o.pickup_time|localtime }}</td><td class="num">{{ o.subtotal_cents|money }}</td>
+      <td>{% if o.status == 'NO_SHOW' %}<span class="badge down">No-show</span>{% elif o.status == 'COMPLETED' %}<span class="badge healthy">Picked up</span>{% else %}{{ o.status|replace('_', ' ')|title }}{% endif %}</td>
+    </tr>{% endfor %}</tbody>
+  </table></div>
+  {% else %}<p class="muted">No orders yet.</p>{% endif %}
+</article>
+
+<article>
+  <header><strong>Recent messages</strong></header>
+  {% for m in msgs %}
+    <p class="msg msg-{{ m.role }}"><small class="muted">{{ m.created_at|localtime }} · {{ {'customer': 'Customer', 'assistant': 'Bot', 'staff': 'Staff', 'system': 'System'}[m.role] }}</small><br>{{ m.content }}</p>
+  {% else %}<p class="muted">No messages.</p>{% endfor %}
+</article>
+{% endblock %}

@@ -1,7 +1,13 @@
-# All packages publish linux/arm64 wheels (or are pure Python), so the image builds natively on an M1 Mac.
+# All packages publish linux/arm64 and macOS arm64 wheels (or are pure Python), so this
+# installs natively on an M1 Mac and in the arm64 Docker image.
 fastapi==0.165.0
 uvicorn[standard]==0.54.0
 pydantic==2.13.5
 pydantic-settings==2.16.3
 httpx==0.28.1
 tzdata==2025.2
+# Developer portal
+jinja2==3.1.6
+python-multipart==0.0.32
+argon2-cffi==25.1.0
+cryptography==50.0.1

@@ -1,0 +1,6 @@
+<div class="result {{ 'good' if ok else 'bad' }}" role="status">
+  <p>{{ '✓' if ok else '✗' }} {{ message }}</p>
+  {% if steps %}
+  <ul>{% for name, good, detail in steps %}<li class="{{ 'good' if good else 'bad' }}">{{ '✓' if good else '✗' }} {{ name }}{% if detail %}: {{ detail }}{% endif %}</li>{% endfor %}</ul>
+  {% endif %}
+</div>
