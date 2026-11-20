@@ -22,7 +22,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--model", default=os.environ.get("AI_MODEL", "deepseek/deepseek-v4.1-flash"))
     ap.add_argument("--fallback-model", default=os.environ.get("AI_FALLBACK_MODEL", "google/gemini-2.5-flash-lite"))
     ap.add_argument("--repeat", type=int, default=1, help="run each case N times (models vary run to run)")
-    ap.add_argument("--semantic", action="store_true", help="turn on meaning-based search (downloads ~70 MB once)")
+    ap.add_argument("--semantic", action="store_true", help="use the real search model too (python -m app.download_model first, or it downloads ~70 MB once)")
     ap.add_argument("--concurrency", type=int, default=4)
     ap.add_argument("--out", type=Path, help="results file (default evals/results/<time>.json)")
     ap.add_argument("--check", action="store_true", help="only validate the dataset against the menu; no model calls")
@@ -45,14 +45,33 @@ def main(argv: list[str] | None = None) -> int:
         print("Set OPENROUTER_API_KEY (use a separate key from the live bot's if you can).")
         return 2
 
+    if args.semantic and not _load_search_model():
+        return 2
     results = asyncio.run(_run_all(cases, args, key))
     out = args.out or ROOT / "evals" / "results" / f"{datetime.now():%Y%m%d-%H%M%S}.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps({"model": args.model, "fallback": args.fallback_model, "repeat": args.repeat,
-                               "results": results}, indent=1, ensure_ascii=False))
+                               "semantic": args.semantic, "results": results}, indent=1, ensure_ascii=False))
     print_report(results)
     print(f"\nFull transcripts: {out}")
     return 0
+
+
+def _load_search_model() -> bool:
+    """--semantic: load the real search model once (it downloads into data/models the first
+    time; MODEL_CACHE_PATH points elsewhere) and share one in-memory index across all cases,
+    so the live bot's index is never touched."""
+    from app.config import Settings
+    from app.services import semantic
+
+    settings = Settings(_env_file=None)
+    try:
+        semantic.load_now(settings)
+    except Exception as exc:  # noqa: BLE001 - say what failed and stop
+        print(f"Couldn't load the search model {settings.embedding_model}: {type(exc).__name__}: {exc}"[:400])
+        return False
+    print(f"Meaning-based search on: {settings.embedding_model} from {semantic.model_dir(settings)}")
+    return True
 
 
 async def _run_all(cases: list[dict], args, key: str) -> list[dict]:

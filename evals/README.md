@@ -12,7 +12,7 @@ export OPENROUTER_API_KEY=sk-or-...
 python -m evals.run                          # all cases, the live bot's models by default
 python -m evals.run --category discounts     # one category
 python -m evals.run --case biscuit_or_burrito --repeat 5   # one case, 5 times (models vary run to run)
-python -m evals.run --semantic               # with meaning-based search on (downloads ~70 MB once)
+python -m evals.run --semantic               # with the real search model too (python -m app.download_model first)
 python -m evals.run --check                  # only check the cases still fit the menu (no model calls)
 ```
 
