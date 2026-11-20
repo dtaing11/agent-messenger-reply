@@ -32,3 +32,12 @@ def test_real_menu_extras_price_correctly(conn, customer_id):
     )
     assert view.lines[0].unit_price_cents == 425 + 99 + 50
     assert view.totals.subtotal_cents == 2 * 574
+
+
+def test_real_hours():
+    from datetime import date, time
+
+    from app.services.business import load_business
+
+    biz = load_business(ROOT / "data/business.json")
+    assert biz.hours_on(date(2026, 11, 22)) == (time(4, 30), time(12, 30))  # a Sunday

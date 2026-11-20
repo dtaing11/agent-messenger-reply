@@ -20,7 +20,7 @@ def settings(tmp_path) -> Settings:
         _env_file=None,
         database_path=tmp_path / "test.db",
         menu_path=ROOT / "tests/fixtures/menu.json",
-        business_path=ROOT / "data/business.json",
+        business_path=ROOT / "tests/fixtures/business.json",
         meta_app_secret="test-secret",
         meta_verify_token="verify-me",
         meta_page_id="PAGE1",
@@ -41,7 +41,7 @@ def conn(settings):
 
 @pytest.fixture
 def biz():
-    return load_business(ROOT / "data/business.json")
+    return load_business(ROOT / "tests/fixtures/business.json")
 
 
 @pytest.fixture
