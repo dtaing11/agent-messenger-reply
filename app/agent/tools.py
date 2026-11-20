@@ -16,10 +16,10 @@ from app.services import (
     custom_items,
     customers,
     discounts,
-    knowledge,
     menu,
     notify,
     phone,
+    search,
     sessions,
 )
 from app.services import order as order_svc
@@ -31,7 +31,7 @@ log = logging.getLogger(__name__)
 
 TOOLS: list[dict] = [
     {"type": "function", "function": {
-        "name": "search_menu", "description": "Find menu items by name or keyword. Returns item ids, prices (before tax) and add-on modifiers.",
+        "name": "search_menu", "description": "Find menu items by name, nickname or what the customer describes (\"something chocolatey\", \"the long one with cream\"). Returns item ids, descriptions, prices (before tax) and add-on modifiers.",
         "parameters": {"type": "object", "properties": {"query": {"type": "string", "maxLength": 100}}, "required": ["query"]}}},
     {"type": "function", "function": {
         "name": "browse_menu", "description": "A short overview for menu questions: with no category, the menu's categories and price ranges; with a category (e.g. \"Bubble Tea\"), its items, each with its own price, and same_price. Use search_menu for an item's flavors and add-ons.",
@@ -218,6 +218,8 @@ def _item_json(conn: sqlite3.Connection, it: sqlite3.Row) -> dict:
     category = it["category_name"] if "category_name" in it.keys() else it["category"].replace("_", " ")
     out = {"item_id": it["id"], "name": it["name"], "category": category,
            "unit": it["unit_label"], "price_before_tax": money(it["price_cents"]), "max_quantity": it["max_quantity"]}
+    if (desc := (it["description"] or "").strip()):
+        out["description"] = desc
     mods = menu.get_modifiers(conn, it["id"])
     if mods:
         out["add_ons"] = [{"modifier_id": m["id"], "name": m["name"], "price": money(m["price_delta_cents"])} for m in mods]
@@ -272,14 +274,15 @@ async def execute(ctx: ToolContext, name: str, raw_args: str | dict) -> dict:
 def _dispatch(ctx: ToolContext, name: str, a: dict) -> dict:
     conn, cid = ctx.conn, ctx.customer_id
     if name == "search_menu":
-        rows = menu.search_menu(conn, str(a["query"])[:100], limit=8)
-        if not rows:  # try each word separately before giving up
-            seen = {}
-            for w in str(a["query"]).split():
-                for r in menu.search_menu(conn, w, limit=5):
-                    seen.setdefault(r["id"], r)
-            rows = list(seen.values())[:8]
-        return {"items": [_item_json(conn, r) for r in rows]} if rows else {"items": [], "note": "No matching items on the menu."}
+        rows, exact = search.find_menu_items(conn, str(a["query"])[:100], limit=8,
+                                             min_score=ctx.settings.semantic_min_score)
+        if not rows:
+            return {"items": [], "note": "No matching items on the menu."}
+        out = {"items": [_item_json(conn, r) for r in rows]}
+        if not exact:
+            out["note"] = ("No item matched those words exactly; these are the closest by meaning. Offer the ones that fit, "
+                           "or ask what they mean. Don't say we have something these items don't show.")
+        return out
     if name == "browse_menu":
         return menu.browse(conn, str(a.get("category") or "")[:60] or None)
     if name == "offer_choices":
@@ -298,7 +301,7 @@ def _dispatch(ctx: ToolContext, name: str, a: dict) -> dict:
         ctx.quick_replies = tuple(opts[:13])
         return {"ok": True, "note": "Buttons will appear under your reply. Still ask the question in your reply."}
     if name == "search_knowledge":
-        docs = knowledge.search(conn, str(a["query"])[:200])
+        docs = search.find_knowledge(conn, str(a["query"])[:200], min_score=ctx.settings.semantic_min_score)
         return {"documents": docs} if docs else {"documents": [], "note": "No approved information found. Don't guess; offer to connect them with the team."}
     if name == "get_business_info":
         b = ctx.biz

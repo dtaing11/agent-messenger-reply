@@ -1,7 +1,9 @@
 # Runs natively on an M1 Mac (all images are multi-arch with linux/arm64 variants).
 #   docker compose up -d                      # api + worker + developer portal (127.0.0.1:8001/admin/)
 #   docker compose --profile tunnel up -d     # + Cloudflare Tunnel (needs CLOUDFLARE_TUNNEL_TOKEN)
-#   docker compose --profile rag up -d        # + Qdrant (Phase 3)
+#   docker compose --profile rag up -d        # + Qdrant server (optional: without it the search
+#                                             #   index is embedded in data/vector_index; with it,
+#                                             #   set QDRANT_URL=http://qdrant:6333)
 
 x-app: &app
   build: .

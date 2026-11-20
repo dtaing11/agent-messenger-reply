@@ -76,8 +76,14 @@ class Settings(BaseSettings):
     menu_path: Path = Path("./data/menu.json")
     business_path: Path = Path("./data/business.json")
     knowledge_path: Path = Path("./data/knowledge/faq.json")
-    qdrant_url: str = "http://qdrant:6333"
+    # Meaning-based search for the menu and FAQ (FastEmbed + Qdrant), next to keyword search.
+    # With no QDRANT_URL (or an unreachable one) the index is embedded on disk: no server needed.
+    semantic_search: bool = True
+    qdrant_url: str = ""
+    vector_index_path: Path | None = None  # default: data/vector_index next to the database
+    model_cache_path: Path | None = None  # default: data/models (the model downloads once, ~70 MB)
     embedding_model: str = "BAAI/bge-small-en-v1.5"
+    semantic_min_score: float = Field(0.62, ge=0.0, le=1.0)
     rag_top_k: int = 5
 
     # Runtime / portal

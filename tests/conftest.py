@@ -29,6 +29,7 @@ def settings(tmp_path) -> Settings:
         tax_rate_bps=0,
         bot_mode="live",
         master_key_path=tmp_path / "keys/master.key",
+        semantic_search=False,  # tests that need it install a small fake index
     )
 
 

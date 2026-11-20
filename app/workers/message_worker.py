@@ -30,7 +30,7 @@ from app.integrations.messenger import (
     MessengerClient,
 )
 from app.services import conversation as conv_svc
-from app.services import notify, owner_accounts, owner_commands, photos, sessions, turns
+from app.services import notify, owner_accounts, owner_commands, photos, search, sessions, turns
 from app.services import order as order_svc
 from app.services.business import BusinessInfo, load_business
 from app.settings.runtime import effective_settings, set_marker
@@ -467,6 +467,7 @@ def build_processor(settings: Settings) -> MessageProcessor:
 async def run_worker(settings: Settings) -> None:
     processor = build_processor(settings)
     log.info("worker started with concurrency=%d", settings.worker_concurrency)
+    search.warm(settings)  # loads the search model in the background; keyword search until then
     await asyncio.gather(
         _housekeeping(settings, processor),
         _notification_loop(settings, processor),

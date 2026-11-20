@@ -12,3 +12,5 @@ data/keys/
 data/bootstrap_code.txt
 keys/
 data/uploads/
+data/vector_index/
+data/models/

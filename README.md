@@ -30,7 +30,9 @@ order updates on Messenger, a menu editor, and customer profiles with pickup his
 | Order transitions with conditional updates and an audit trail; pending-order expiry; customer cancel rules | done |
 | Messenger Send API client (quick-reply Confirm / Modify; long messages split, never cut) | done |
 | AI assistant: OpenRouter tool loop (menu, FAQ, cart, pickup, summary, cancel, hand-off), fallback model, privacy routing | done |
-| Store FAQ (owner-approved docs in `data/knowledge/faq.json`, FTS5 search) | done; semantic search (FastEmbed + Qdrant) later |
+| Store FAQ (owner-approved docs in `data/knowledge/faq.json`) | done |
+| Hybrid search for the menu and FAQ: keywords (names, descriptions, search words, FTS5) plus meaning (FastEmbed `bge-small-en-v1.5` in an embedded Qdrant index), merged with reciprocal rank fusion, so "something chocolatey", "the long one with cream" or "fruity tea" find the right items. Prices, availability and approval always come from SQL. The index updates itself after menu edits in the portal; until the model has downloaded, search is keyword-only. Check results with `python -m app.search_check "your words"` | done |
+| Menu descriptions (what the bot can tell customers) and search words (nicknames and misspellings, never shown), both editable in the portal | done |
 | Owner texts via Twilio with retries; delivery status callback | done |
 | Owner text commands: `YES 12`, `NO 12`, `READY 12`, `PICKED 12`, `NOSHOW 12`, `ORDERS`, `PAUSE`, `RESUME`, `HELP` | done |
 | Customer Messenger updates on accept / decline / ready / expiry (within Meta's 24 h window) | done |

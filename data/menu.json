@@ -46,7 +46,8 @@
       "unit_label": "dozen",
       "price_cents": 1199,
       "max_quantity": 30,
-      "description": ""
+      "description": "Twelve of our classic glazed donuts.",
+      "search_terms": "dozen glazed, 12 glazed, box of glazed, original glazed, dozen donuts, doughnuts, donughts"
     },
     {
       "id": "dozen_chocolate_donuts",
@@ -55,7 +56,8 @@
       "unit_label": "dozen",
       "price_cents": 1355,
       "max_quantity": 30,
-      "description": ""
+      "description": "Twelve chocolate donuts.",
+      "search_terms": "dozen chocolate, 12 chocolate, box of chocolate donuts, choc, chocolatey, doughnuts"
     },
     {
       "id": "dozen_mix_donuts",
@@ -65,6 +67,7 @@
       "price_cents": 1355,
       "max_quantity": 30,
       "description": "A mix of 12 donuts from: Glazed, Blue Icing, Chocolate Icing, Maple Icing, White Icing, Strawberry Icing, Cinnamon Sugar. Icing flavors can have sprinkles (not Glazed or Cinnamon Sugar).",
+      "search_terms": "assorted dozen, variety, mixed dozen, assortment, 12 donuts, box of donuts, doughnuts, sprinkles",
       "choices": [
         {
           "key": "mix",
@@ -91,7 +94,8 @@
       "unit_label": "half dozen",
       "price_cents": 649,
       "max_quantity": 30,
-      "description": ""
+      "description": "Six of our classic glazed donuts.",
+      "search_terms": "6 glazed, half a dozen glazed, half dozen, doughnuts"
     },
     {
       "id": "half_dozen_chocolate_donuts",
@@ -100,7 +104,8 @@
       "unit_label": "half dozen",
       "price_cents": 729,
       "max_quantity": 30,
-      "description": ""
+      "description": "Six chocolate donuts.",
+      "search_terms": "6 chocolate, half a dozen chocolate, choc, chocolatey, doughnuts"
     },
     {
       "id": "half_dozen_mix_donuts",
@@ -110,6 +115,7 @@
       "price_cents": 729,
       "max_quantity": 30,
       "description": "A mix of 6 donuts from: Glazed, Blue Icing, Chocolate Icing, Maple Icing, White Icing, Strawberry Icing, Cinnamon Sugar. Icing flavors can have sprinkles (not Glazed or Cinnamon Sugar).",
+      "search_terms": "6 assorted, variety, mixed half dozen, half a dozen, assortment, doughnuts, sprinkles",
       "choices": [
         {
           "key": "mix",
@@ -137,6 +143,7 @@
       "price_cents": 1245,
       "max_quantity": 30,
       "description": "Any 6 Big Donuts. Big Donuts are all the single donuts priced $2.09; mix as you like.",
+      "search_terms": "6 big donuts, big ones, large donuts, specialty donuts, half a dozen big",
       "choices": [
         {
           "key": "big_donuts",
@@ -156,7 +163,8 @@
       "unit_label": "each",
       "price_cents": 125,
       "max_quantity": 60,
-      "description": ""
+      "description": "Our classic glazed donut: sweet and simple.",
+      "search_terms": "single glazed, original glazed, plain glazed, glaze, doughnut, donught"
     },
     {
       "id": "icing_sprinkles_donut",
@@ -166,6 +174,7 @@
       "price_cents": 135,
       "max_quantity": 60,
       "description": "Choose a flavor: Glazed, Blue Icing, Chocolate Icing, Maple Icing, White Icing, Strawberry Icing or Cinnamon Sugar. Sprinkles are available on the icing flavors only (not Glazed or Cinnamon Sugar).",
+      "search_terms": "frosted donut, iced donut, sprinkle donut, sprinkled, sprinkles, frosting, chocolate frosted, maple frosted, doughnut",
       "choices": [
         {
           "key": "flavor",
@@ -203,7 +212,8 @@
       "unit_label": "each",
       "price_cents": 179,
       "max_quantity": 60,
-      "description": ""
+      "description": "A cake-style donut, denser than a regular raised donut.",
+      "search_terms": "cake doughnut, cakey donut"
     },
     {
       "id": "filled_donut",
@@ -213,6 +223,7 @@
       "price_cents": 179,
       "max_quantity": 60,
       "description": "Filled donut. Outside: Glazed, Chocolate Icing or Powdered Sugar. Filling: Bavarian Cream, or Blueberry, Raspberry, Lemon or Strawberry jelly. Any outside goes with any filling.",
+      "search_terms": "jelly donut, jelly filled, cream filled, custard filled, bavarian, bismark, berliner, filled doughnut, powdered, powder sugar, lemon filled, raspberry filled, blueberry filled, strawberry filled",
       "choices": [
         {
           "key": "outside",
@@ -246,6 +257,7 @@
       "price_cents": 209,
       "max_quantity": 60,
       "description": "Long John filled with Bavarian cream. Flavors: Chocolate or Maple.",
+      "search_terms": "longjohn, long jon, long johns, the long one, eclair, cream filled bar, maple bar, chocolate bar, bavarian cream",
       "choices": [
         {
           "key": "flavor",
@@ -264,7 +276,8 @@
       "unit_label": "each",
       "price_cents": 209,
       "max_quantity": 60,
-      "description": ""
+      "description": "A sweet swirl of dough rolled with cinnamon.",
+      "search_terms": "cinnamon bun, cinammon roll, cinnamon swirl, cinnamon rolls"
     },
     {
       "id": "pinecone",
@@ -273,7 +286,8 @@
       "unit_label": "each",
       "price_cents": 209,
       "max_quantity": 60,
-      "description": ""
+      "description": "",
+      "search_terms": "pine cone, pinecone donut"
     },
     {
       "id": "twist",
@@ -283,6 +297,7 @@
       "price_cents": 209,
       "max_quantity": 60,
       "description": "Twist donut. Flavors: Cinnamon Glazed, Cinnamon Sugar, Chocolate, Glazed.",
+      "search_terms": "twisted donut, cinnamon twist, twists, twisty",
       "choices": [
         {
           "key": "flavor",
@@ -303,7 +318,8 @@
       "unit_label": "each",
       "price_cents": 290,
       "max_quantity": 60,
-      "description": ""
+      "description": "A fried pastry made with apple.",
+      "search_terms": "fritter, apple fritters, appel fritter, aple fritter"
     },
     {
       "id": "glazed_donut_holes",
@@ -312,7 +328,8 @@
       "unit_label": "each",
       "price_cents": 249,
       "max_quantity": 60,
-      "description": ""
+      "description": "Bite-size glazed donut holes.",
+      "search_terms": "donut holes, doughnut holes, holes, munchkins, donut bites, glazed holes, bite size"
     },
     {
       "id": "chocolate_donut_holes",
@@ -321,7 +338,8 @@
       "unit_label": "each",
       "price_cents": 280,
       "max_quantity": 60,
-      "description": ""
+      "description": "Bite-size chocolate donut holes.",
+      "search_terms": "chocolate holes, donut holes, doughnut holes, munchkins, donut bites, chocolatey, choc"
     },
     {
       "id": "boudin_cheese_kolache",
@@ -330,7 +348,8 @@
       "unit_label": "each",
       "price_cents": 365,
       "max_quantity": 60,
-      "description": ""
+      "description": "Savory kolache: Cajun boudin sausage and cheese wrapped in dough.",
+      "search_terms": "boudin kolache, boudain, boudan, cajun, kolachi, kolachy, klobasnek, pig in a blanket, sausage roll"
     },
     {
       "id": "smoke_sausage_cheese_kolache",
@@ -339,7 +358,8 @@
       "unit_label": "each",
       "price_cents": 315,
       "max_quantity": 60,
-      "description": ""
+      "description": "Savory kolache: smoked sausage and cheese wrapped in dough.",
+      "search_terms": "sausage kolache, sausage and cheese, smoked sausage, kolachi, kolachy, klobasnek, pig in a blanket, sausage roll"
     },
     {
       "id": "smoke_sausage_cheese_jalapeno_kolache",
@@ -348,7 +368,8 @@
       "unit_label": "each",
       "price_cents": 315,
       "max_quantity": 60,
-      "description": ""
+      "description": "Spicy kolache: smoked sausage, cheese and jalapeño wrapped in dough.",
+      "search_terms": "jalapeno, jalepeno, halapeno, spicy kolache, spicy sausage, kolachi, kolachy, klobasnek, pig in a blanket"
     },
     {
       "id": "spinach_feta_cheese_danish",
@@ -357,7 +378,8 @@
       "unit_label": "each",
       "price_cents": 345,
       "max_quantity": 60,
-      "description": ""
+      "description": "Savory danish pastry with spinach and feta cheese.",
+      "search_terms": "spinach danish, spinach feta, spinach and cheese pastry, danish, feta"
     },
     {
       "id": "sausage_egg_cheese_croissant",
@@ -366,7 +388,8 @@
       "unit_label": "each",
       "price_cents": 425,
       "max_quantity": 30,
-      "description": "",
+      "description": "Breakfast croissant sandwich with sausage, egg and cheese.",
+      "search_terms": "sausage croissant, croissant sandwich, croisant, crossaint, breakfast sandwich",
       "modifiers": [
         {
           "id": "sausage_egg_cheese_croissant_extra_sausage",
@@ -402,7 +425,8 @@
       "unit_label": "each",
       "price_cents": 425,
       "max_quantity": 30,
-      "description": "",
+      "description": "Breakfast croissant sandwich with bacon, egg and cheese.",
+      "search_terms": "bacon croissant, croissant sandwich, croisant, crossaint, breakfast sandwich",
       "modifiers": [
         {
           "id": "bacon_egg_cheese_croissant_extra_sausage",
@@ -438,7 +462,8 @@
       "unit_label": "each",
       "price_cents": 425,
       "max_quantity": 30,
-      "description": "",
+      "description": "Breakfast croissant sandwich with ham, egg and cheese.",
+      "search_terms": "ham croissant, croissant sandwich, croisant, crossaint, breakfast sandwich",
       "modifiers": [
         {
           "id": "ham_egg_cheese_croissant_extra_sausage",
@@ -474,7 +499,8 @@
       "unit_label": "each",
       "price_cents": 365,
       "max_quantity": 30,
-      "description": "",
+      "description": "Breakfast biscuit sandwich with sausage, egg and cheese.",
+      "search_terms": "sausage biscuit, biscuit sandwich, biscut, buscuit, breakfast sandwich",
       "modifiers": [
         {
           "id": "sausage_egg_cheese_biscuit_extra_sausage",
@@ -510,7 +536,8 @@
       "unit_label": "each",
       "price_cents": 365,
       "max_quantity": 30,
-      "description": "",
+      "description": "Breakfast burrito with sausage, egg and cheese.",
+      "search_terms": "sausage burrito, breakfast burrito, buritto, burito, breakfast wrap",
       "modifiers": [
         {
           "id": "sausage_egg_cheese_burrito_extra_sausage",
@@ -546,7 +573,8 @@
       "unit_label": "each",
       "price_cents": 365,
       "max_quantity": 30,
-      "description": "",
+      "description": "Breakfast biscuit sandwich with bacon, egg and cheese.",
+      "search_terms": "bacon biscuit, biscuit sandwich, biscut, buscuit, breakfast sandwich",
       "modifiers": [
         {
           "id": "bacon_egg_cheese_biscuit_extra_sausage",
@@ -582,7 +610,8 @@
       "unit_label": "each",
       "price_cents": 365,
       "max_quantity": 30,
-      "description": "",
+      "description": "Breakfast burrito with bacon, egg and cheese.",
+      "search_terms": "bacon burrito, breakfast burrito, buritto, burito, breakfast wrap",
       "modifiers": [
         {
           "id": "bacon_egg_cheese_burrito_extra_sausage",
@@ -618,7 +647,8 @@
       "unit_label": "each",
       "price_cents": 365,
       "max_quantity": 30,
-      "description": "",
+      "description": "Breakfast biscuit sandwich with ham, egg and cheese.",
+      "search_terms": "ham biscuit, biscuit sandwich, biscut, buscuit, breakfast sandwich",
       "modifiers": [
         {
           "id": "ham_egg_cheese_biscuit_extra_sausage",
@@ -654,7 +684,8 @@
       "unit_label": "each",
       "price_cents": 365,
       "max_quantity": 30,
-      "description": "",
+      "description": "Breakfast burrito with ham, egg and cheese.",
+      "search_terms": "ham burrito, breakfast burrito, buritto, burito, breakfast wrap",
       "modifiers": [
         {
           "id": "ham_egg_cheese_burrito_extra_sausage",
@@ -690,7 +721,8 @@
       "unit_label": "each",
       "price_cents": 179,
       "max_quantity": 30,
-      "description": "",
+      "description": "A plain biscuit. Sausage, bacon, ham, egg or cheese can be added as extras.",
+      "search_terms": "biscuit, biscut, buscuit, just a biscuit, plain",
       "modifiers": [
         {
           "id": "plain_biscuit_extra_sausage",
@@ -726,7 +758,8 @@
       "unit_label": "each",
       "price_cents": 415,
       "max_quantity": 30,
-      "description": "",
+      "description": "Milk, large size.",
+      "search_terms": "milk, big milk, glass of milk",
       "modifiers": [
         {
           "id": "large_milk_coconut_jelly",
@@ -772,7 +805,8 @@
       "unit_label": "each",
       "price_cents": 249,
       "max_quantity": 30,
-      "description": "",
+      "description": "Milk, medium size.",
+      "search_terms": "milk, glass of milk",
       "modifiers": [
         {
           "id": "medium_milk_coconut_jelly",
@@ -818,7 +852,8 @@
       "unit_label": "each",
       "price_cents": 165,
       "max_quantity": 30,
-      "description": "",
+      "description": "Milk, small size.",
+      "search_terms": "milk, kids milk, little milk",
       "modifiers": [
         {
           "id": "small_milk_coconut_jelly",
@@ -864,7 +899,8 @@
       "unit_label": "each",
       "price_cents": 259,
       "max_quantity": 30,
-      "description": "",
+      "description": "A soft drink (soda).",
+      "search_terms": "soda, pop, soda pop, cold drink, fizzy drink, soft drinks",
       "modifiers": [
         {
           "id": "soft_drink_coconut_jelly",
@@ -910,7 +946,8 @@
       "unit_label": "each",
       "price_cents": 335,
       "max_quantity": 30,
-      "description": "",
+      "description": "An energy drink.",
+      "search_terms": "energy drinks, caffeine, energy boost",
       "modifiers": [
         {
           "id": "energy_drink_coconut_jelly",
@@ -956,7 +993,8 @@
       "unit_label": "each",
       "price_cents": 259,
       "max_quantity": 30,
-      "description": "",
+      "description": "Minute Maid juice.",
+      "search_terms": "juice, fruit juice, minute maid",
       "modifiers": [
         {
           "id": "juice_minute_maid_coconut_jelly",
@@ -1003,6 +1041,7 @@
       "price_cents": 259,
       "max_quantity": 30,
       "description": "Made with Community Coffee.",
+      "search_terms": "hot coffee, cup of coffee, black coffee, cup of joe, community coffee, cofee, coffe, drip coffee",
       "modifiers": [
         {
           "id": "coffee_coconut_jelly",
@@ -1049,6 +1088,7 @@
       "price_cents": 335,
       "max_quantity": 30,
       "description": "Made with Community Coffee.",
+      "search_terms": "capuccino, cappucino, capachino, foamy coffee, community coffee",
       "modifiers": [
         {
           "id": "cappuccino_coconut_jelly",
@@ -1094,7 +1134,8 @@
       "unit_label": "each",
       "price_cents": 165,
       "max_quantity": 30,
-      "description": "",
+      "description": "Water.",
+      "search_terms": "agua, h2o, drinking water",
       "modifiers": [
         {
           "id": "water_coconut_jelly",
@@ -1140,7 +1181,8 @@
       "unit_label": "each",
       "price_cents": 175,
       "max_quantity": 30,
-      "description": "",
+      "description": "Tummy Yummy fruit drink.",
+      "search_terms": "kids drink, kids juice, juice drink",
       "modifiers": [
         {
           "id": "tummy_yummy_coconut_jelly",
@@ -1186,7 +1228,8 @@
       "unit_label": "each",
       "price_cents": 315,
       "max_quantity": 30,
-      "description": "",
+      "description": "A Starbucks coffee drink.",
+      "search_terms": "starbuck, starbucks drink, bottled coffee, cold coffee",
       "modifiers": [
         {
           "id": "starbucks_coconut_jelly",
@@ -1232,7 +1275,8 @@
       "unit_label": "each",
       "price_cents": 280,
       "max_quantity": 30,
-      "description": "",
+      "description": "Prime drink.",
+      "search_terms": "prime hydration, prime drink, sports drink",
       "modifiers": [
         {
           "id": "prime_coconut_jelly",
@@ -1279,6 +1323,7 @@
       "price_cents": 2289,
       "max_quantity": 10,
       "description": "Decorated donut with a custom message for birthdays, holidays and special events, e.g. \"Happy Birthday\", \"Happy Bday {Name}\" or \"Merry Christmas\".",
+      "search_terms": "birthday donut, bday donut, custom donut, personalized donut, name on a donut, writing on a donut, message, decorated donut, celebration, holiday, graduation, anniversary, special order",
       "custom": {
         "message_max_length": 40,
         "design_max_length": 300,
@@ -1300,6 +1345,7 @@
       "price_cents": 499,
       "max_quantity": 20,
       "description": "Bubble tea. Signature drink: Black Milk Tea. Oolong Milk Tea is not available right now. Toppings (add any number): Coconut Jelly, Mango, Peach, Passion Fruit or Strawberry Bursting Boba, Tapioca Pearl (+$0.80 each), Coffee Jelly (+$1.25).",
+      "search_terms": "boba, boba tea, bubble tea, milktea, pearl milk tea, creamy tea, taro, oreo",
       "choices": [
         {
           "key": "flavor",
@@ -1372,6 +1418,7 @@
       "price_cents": 499,
       "max_quantity": 20,
       "description": "Bubble tea. Signature drinks: Strawberry Green Tea and Mango Green Tea. Toppings (add any number): Coconut Jelly, Mango, Peach, Passion Fruit or Strawberry Bursting Boba, Tapioca Pearl (+$0.80 each), Coffee Jelly (+$1.25).",
+      "search_terms": "fruit tea, fruity tea, boba, bubble tea, greentea, mango, strawberry, passion fruit, peach",
       "choices": [
         {
           "key": "flavor",
@@ -1443,6 +1490,7 @@
       "price_cents": 599,
       "max_quantity": 20,
       "description": "Signature drink: Oreo Smoothie. Toppings (add any number): Coconut Jelly, Mango, Peach, Passion Fruit or Strawberry Bursting Boba, Tapioca Pearl (+$0.80 each), Coffee Jelly (+$1.25).",
+      "search_terms": "smoothy, smoothies, blended drink, fruit smoothie, frozen drink, slushie, oreo",
       "choices": [
         {
           "key": "flavor",
@@ -1505,6 +1553,7 @@
       "price_cents": 399,
       "max_quantity": 20,
       "description": "Bubble tea menu. Toppings (add any number): Coconut Jelly, Mango, Peach, Passion Fruit or Strawberry Bursting Boba, Tapioca Pearl (+$0.80 each), Coffee Jelly (+$1.25).",
+      "search_terms": "cold coffee, ice coffee, iced coffe, caramel coffee, vanilla coffee, boba coffee",
       "choices": [
         {
           "key": "flavor",

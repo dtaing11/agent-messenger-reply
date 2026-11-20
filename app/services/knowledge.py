@@ -1,8 +1,8 @@
 """Approved business knowledge (FAQ) with SQLite FTS5 keyword search.
 
 Only owner-approved documents are searchable (the FTS table is maintained by triggers on
-approval_status). Semantic search with FastEmbed + Qdrant can be layered on later; prices,
-availability and order state always come from SQL tools, never from here.
+approval_status). app.services.search adds meaning-based matches (FastEmbed + Qdrant) on top;
+prices, availability and order state always come from SQL tools, never from here.
 """
 
 import json
