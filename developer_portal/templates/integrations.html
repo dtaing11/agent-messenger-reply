@@ -118,7 +118,11 @@
     <div class="actions">
       <button type="submit">Save</button>
       <button type="button" class="secondary" hx-post="/admin/integrations/twilio/test" hx-include="#tw-form" hx-target="#tw-result">Test (no text is sent)</button>
+      <button type="button" class="secondary" hx-post="/admin/integrations/twilio/connect" hx-include="#tw-form" hx-target="#tw-result">Connect owner replies automatically</button>
+      <button type="button" class="secondary outline" hx-post="/admin/integrations/twilio/test-sms" hx-include="#tw-form" hx-target="#tw-result">Send a test text to owners</button>
     </div>
+    <p class="small muted">Owners text back: YES 12 / NO 12 (accept or decline), READY 12, PICKED 12 or NOSHOW 12 (after pickup time), ORDERS, PAUSE, RESUME, HELP.
+      US numbers: Twilio requires the sending number to be registered (A2P 10DLC, or toll-free verification) before texts are delivered; a trial account can only text numbers you've verified in Twilio.</p>
   </form>
   <div id="tw-result"></div>
 </article>

@@ -37,8 +37,14 @@ class Settings(BaseSettings):
     ai_model: str = ""
     ai_fallback_model: str = ""
     max_tool_rounds: int = Field(6, ge=1, le=20)
+    ai_temperature: float = Field(0.2, ge=0, le=1.5)
+    ai_timeout_seconds: float = Field(25.0, ge=5, le=120)
+    ai_max_tokens: int = Field(600, ge=100, le=4000)
+    # Ask OpenRouter to route only to providers that don't train on prompts.
+    ai_deny_data_collection: bool = True
+    ai_history_messages: int = Field(16, ge=2, le=60)
 
-    # Twilio (Phase 6)
+    # Twilio
     twilio_account_sid: str = ""
     twilio_auth_token: SecretStr = SecretStr("")
     twilio_phone_number: str = ""
@@ -52,6 +58,8 @@ class Settings(BaseSettings):
     tax_rate_bps: int = Field(0, ge=0, le=5000)
     pending_order_expiry_minutes: int = Field(120, ge=0)
     customer_can_cancel_accepted: bool = False
+    require_customer_phone: bool = True
+    pickup_check_after_minutes: int = Field(30, ge=0, le=720)  # 0 = don't ask owners
     large_order_threshold_cents: int = Field(10000, ge=0)
     confirmation_token_ttl_minutes: int = Field(30, ge=1)
 
@@ -59,6 +67,7 @@ class Settings(BaseSettings):
     database_path: Path = Path("./data/database.db")
     menu_path: Path = Path("./data/menu.json")
     business_path: Path = Path("./data/business.json")
+    knowledge_path: Path = Path("./data/knowledge/faq.json")
     qdrant_url: str = "http://qdrant:6333"
     embedding_model: str = "BAAI/bge-small-en-v1.5"
     rag_top_k: int = 5

@@ -13,6 +13,7 @@ from urllib.parse import urlparse
 import httpx
 
 from app.config import Settings
+from app.integrations import openrouter, twilio
 
 GRAPH = "https://graph.facebook.com"
 MESSENGER_FIELDS = "messages,messaging_postbacks,message_echoes"
@@ -157,7 +158,32 @@ async def test_openrouter(settings: Settings, http: httpx.AsyncClient) -> CheckR
             return CheckResult(False, "DOWN", f"Model '{settings.ai_model}' isn't available on OpenRouter.",
                                int((time.monotonic() - start) * 1000))
         detail += f" Model {settings.ai_model} is available."
+        # A tiny real request with the same privacy routing and tools the assistant uses, so a
+        # model/provider that can't do it shows up here instead of on a customer's message.
+        steps = []
+        for label, model in (("Main model", settings.ai_model), ("Backup model", settings.ai_fallback_model)):
+            if not model:
+                continue
+            try:
+                await openrouter.chat(settings.model_copy(update={"ai_max_tokens": 100}),
+                                      [{"role": "user", "content": "Reply with the word ok."}],
+                                      tools=[PING_TOOL], model=model, http=http)
+                steps.append((f"{label} {model}", True, "answered"))
+            except (openrouter.LLMError, httpx.HTTPError) as exc:
+                steps.append((f"{label} {model}", False, str(exc)[:200]))
+        ms = int((time.monotonic() - start) * 1000)
+        if steps and not steps[0][1]:
+            hint = (" Try turning off 'only providers that don't keep data' or pick another model."
+                    if settings.ai_deny_data_collection else "")
+            return CheckResult(False, "DOWN", "The main model couldn't answer a test message." + hint, ms, steps)
+        if steps and not all(ok for _, ok, _ in steps):
+            return CheckResult(True, "DEGRADED", detail + " The backup model failed its test.", ms, steps)
+        return CheckResult(True, "HEALTHY", detail + " Test message answered.", ms, steps or None)
     return CheckResult(True, "HEALTHY", detail, int((time.monotonic() - start) * 1000))
+
+
+PING_TOOL = {"type": "function", "function": {"name": "ping", "description": "Not used.",
+                                              "parameters": {"type": "object", "properties": {}}}}
 
 
 async def test_twilio(settings: Settings, http: httpx.AsyncClient) -> CheckResult:
@@ -173,6 +199,25 @@ async def test_twilio(settings: Settings, http: httpx.AsyncClient) -> CheckResul
     if r.status_code != 200:
         return CheckResult(False, "DOWN", f"Twilio rejected the credentials (HTTP {r.status_code})", ms)
     return CheckResult(True, "HEALTHY", f"Account '{r.json().get('friendly_name', sid)}' is reachable. No SMS was sent.", ms)
+
+
+async def connect_twilio(settings: Settings, http: httpx.AsyncClient) -> CheckResult:
+    """Check the credentials, then point the Twilio number's incoming texts at /webhooks/sms."""
+    first = await test_twilio(settings, http)
+    if not first.ok:
+        return first
+    steps = [("Twilio account", True, first.detail)]
+    if not settings.public_base_url:
+        steps.append(("Public URL", False, "Save the Public URL in the Meta section first (Detect tunnel)."))
+        return CheckResult(False, "DOWN", "Owner replies need the public address of your tunnel.", None, steps)
+    url = f"{settings.public_base_url.rstrip('/')}/webhooks/sms"
+    try:
+        detail = await twilio.point_number_at(settings, url, http)
+    except twilio.SMSError as exc:
+        steps.append(("Incoming texts webhook", False, str(exc)))
+        return CheckResult(False, "DOWN", "Couldn't set up owner replies.", None, steps)
+    steps.append(("Incoming texts webhook", True, detail))
+    return CheckResult(True, "HEALTHY", "Owners can now text YES/NO/READY/PICKED/NOSHOW back to this number.", None, steps)
 
 
 async def detect_quick_tunnel(ports: list[int], http: httpx.AsyncClient) -> str | None:

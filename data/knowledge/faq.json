@@ -1,0 +1,22 @@
+{
+  "_comment": "Owner-confirmed store facts (2026-11-19; location updated 2026-11-20). Loaded as approved knowledge. Add only facts the owner has confirmed.",
+  "documents": [
+    {"id": "hours", "category": "hours", "question": "What are your hours? When are you open?",
+     "answer": "We're open every day from 4:30 AM to 12:30 PM, including holidays."},
+    {"id": "holidays", "category": "hours", "question": "Are you open on holidays like Christmas, Thanksgiving or New Year's?",
+     "answer": "Yes. We're open every day of the year, holidays included, from 4:30 AM to 12:30 PM."},
+    {"id": "location", "category": "location", "question": "Where are you located? What is your address? Which Town Donut store is this? Directions?",
+     "answer": "We're Town Donut Watson, in the Oak Point Plaza next to Subway: 35505 LA-16 #3C, Denham Springs, LA 70706. Map: https://www.google.com/maps/dir//35505+LA-16+%233C,+Denham+Springs,+LA+70706/data=!4m6!4m5!1m1!4e2!1m2!1m1!1s0x8626944e98ea8175:0x69c5739ea3fecf53 . Messenger orders are picked up at this store only."},
+    {"id": "phone", "category": "contact", "question": "What is your phone number? How do I call the store?",
+     "answer": "You can call the store at (225) 380-5250."},
+    {"id": "payment", "category": "payment", "question": "How do I pay? Can I pay online or with a card here?",
+     "answer": "Payment is made at pickup. We never take card details over Messenger."},
+    {"id": "tax", "category": "pricing", "question": "Do prices include tax?",
+     "answer": "Menu prices are before tax. Tax is added at pickup."},
+    {"id": "pickup_only", "category": "ordering", "question": "Do you deliver? How do Messenger orders work?",
+     "answer": "Orders placed here on Messenger are for pickup at the store. You confirm your order, then our team accepts it and you pay at pickup."},
+    {"id": "special_design_donut", "category": "special_orders",
+     "question": "Do you make custom or decorated donuts for birthdays, holidays or events?",
+     "answer": "Yes! Our Special Design Donut is $22.89 before tax. It can say things like \"Happy Birthday\", \"Happy Bday {Name}\" or \"Merry Christmas\". Names longer than 7 letters have an extra charge that our team confirms. Tell us the message and the design you'd like (theme, colors, decorations)."}
+  ]
+}

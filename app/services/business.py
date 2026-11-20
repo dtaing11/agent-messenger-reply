@@ -31,6 +31,33 @@ class BusinessInfo:
     def tz(self) -> ZoneInfo:
         return ZoneInfo(self.timezone)
 
+    @property
+    def store_name(self) -> str:
+        return self.raw.get("store_name") or self.name
+
+    @property
+    def address(self) -> str:
+        return self.raw.get("address", "")
+
+    @property
+    def landmark(self) -> str:
+        return self.raw.get("landmark", "")
+
+    @property
+    def maps_url(self) -> str:
+        return self.raw.get("maps_url", "")
+
+    def pickup_location_lines(self) -> list[str]:
+        """Where to pick up, shown on every summary and confirmation so customers
+        don't go to another Town Donut by mistake (owner's request)."""
+        where = self.store_name + (f", {self.landmark}" if self.landmark else "")
+        lines = [f"Pickup location: {where}"]
+        if self.address:
+            lines.append(self.address)
+        if self.maps_url:
+            lines.append(f"Map: {self.maps_url}")
+        return lines
+
     def hours_on(self, day: date) -> tuple[time, time] | None:
         if day in self.closed_dates:
             return None

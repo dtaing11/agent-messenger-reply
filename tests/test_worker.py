@@ -28,6 +28,9 @@ class FakeResponder:
     async def send_order_summary(self, psid, text, token):
         self.sent.append((psid, text, token))
 
+    async def send_update(self, psid, text):
+        self.sent.append((psid, text, "UPDATE"))
+
 
 @pytest.fixture
 def responder():
@@ -69,7 +72,7 @@ def test_text_gets_placeholder_reply_and_history(conn, processor, settings, resp
 
 def test_confirm_quick_reply_submits_once(conn, processor, settings, biz, responder, customer_id):
     cart.add_item(conn, customer_id, "glazed_dozen", 2)
-    cart.set_pickup_details(conn, customer_id, pickup_time=PICKUP, customer_name="Jessica")
+    cart.set_pickup_details(conn, customer_id, pickup_time=PICKUP, customer_name="Jessica", customer_phone="225-555-0123")
     s = order_svc.present_order_summary(conn, customer_id, biz, settings, NOW)
     enqueue_message(conn, "m1", "Confirm Order", quick_reply=POSTBACK_CONFIRM + s.token)
     enqueue_message(conn, "m2", "Confirm Order", quick_reply=POSTBACK_CONFIRM + s.token)  # double tap
@@ -82,7 +85,7 @@ def test_confirm_quick_reply_submits_once(conn, processor, settings, biz, respon
 
 def test_stale_confirm_resends_summary(conn, processor, settings, biz, responder, customer_id):
     cart.add_item(conn, customer_id, "glazed_dozen", 2)
-    cart.set_pickup_details(conn, customer_id, pickup_time=PICKUP, customer_name="Jessica")
+    cart.set_pickup_details(conn, customer_id, pickup_time=PICKUP, customer_name="Jessica", customer_phone="225-555-0123")
     s = order_svc.present_order_summary(conn, customer_id, biz, settings, NOW)
     cart.add_item(conn, customer_id, "coffee_medium", 1)  # changes the cart
     enqueue_message(conn, "m1", "Confirm Order", quick_reply=POSTBACK_CONFIRM + s.token)

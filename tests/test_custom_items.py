@@ -68,7 +68,7 @@ def test_details_rejected_on_regular_item(conn, customer_id):
 def test_summary_and_sms_show_design_and_surcharge(conn, customer_id, biz, settings):
     cart.add_item(conn, customer_id, ITEM, 1,
                   details={"message": "Happy Bday Elizabeth", "name": "Elizabeth", "design": "purple unicorn"})
-    cart.set_pickup_details(conn, customer_id, pickup_time=PICKUP, customer_name="Mom")
+    cart.set_pickup_details(conn, customer_id, pickup_time=PICKUP, customer_name="Mom", customer_phone="225-555-0123")
     s = order_svc.present_order_summary(conn, customer_id, biz, settings, NOW)
     assert 'Message: "Happy Bday Elizabeth"' in s.text and "Design: purple unicorn" in s.text
     assert order_svc.LONG_NAME_NOTE in s.text and order_svc.TAX_REMINDER in s.text

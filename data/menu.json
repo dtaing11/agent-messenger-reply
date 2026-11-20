@@ -1,5 +1,39 @@
 {
-  "_comment": "Town Donut & Breakfast (Denham Springs / Watson) menu, transcribed from the owner's menu board on 2026-11-19. Prices are before tax.",
+  "_comment": "Town Donut & Breakfast (Denham Springs / Watson) menu, transcribed from the owner's menu board on 2026-11-19. Prices are before tax. Twist/Long John flavors and Community Coffee details from the owner, 2026-11-20. Biscuits and burritos are separate items at the same price (owner, 2026-11-20) Big Donuts = every single donut priced $2.09 (owner, 2026-11-20). Icing/Mix flavors and sprinkles rule (icing flavors only) from the owner, 2026-11-20.",
+  "categories": [
+    {
+      "id": "donuts_by_dozen",
+      "name": "Donuts by the Dozen"
+    },
+    {
+      "id": "donuts_by_half_dozen",
+      "name": "Donuts by the Half Dozen"
+    },
+    {
+      "id": "donuts",
+      "name": "Donuts"
+    },
+    {
+      "id": "kolaches",
+      "name": "Kolaches"
+    },
+    {
+      "id": "croissant_sandwiches",
+      "name": "Croissant Sandwiches"
+    },
+    {
+      "id": "biscuit_sandwiches_burritos",
+      "name": "Biscuit Sandwiches & Burritos"
+    },
+    {
+      "id": "drinks",
+      "name": "Drinks"
+    },
+    {
+      "id": "special_design",
+      "name": "Special Design Donuts"
+    }
+  ],
   "items": [
     {
       "id": "dozen_glazed_donuts",
@@ -26,7 +60,25 @@
       "unit_label": "dozen",
       "price_cents": 1355,
       "max_quantity": 30,
-      "description": ""
+      "description": "A mix of 12 donuts from: Glazed, Blue Icing, Chocolate Icing, Maple Icing, White Icing, Strawberry Icing, Cinnamon Sugar. Icing flavors can have sprinkles (not Glazed or Cinnamon Sugar).",
+      "choices": [
+        {
+          "key": "mix",
+          "label": "Donut mix",
+          "options": [
+            "Glazed",
+            "Blue Icing",
+            "Chocolate Icing",
+            "Maple Icing",
+            "White Icing",
+            "Strawberry Icing",
+            "Cinnamon Sugar"
+          ],
+          "count": 12,
+          "mix": true,
+          "question": "How would you like your 12 donuts mixed? Flavors: Glazed, Blue Icing, Chocolate Icing, Maple Icing, White Icing, Strawberry Icing and Cinnamon Sugar. Icing flavors can have sprinkles. Or we can mix them for you."
+        }
+      ]
     },
     {
       "id": "half_dozen_glazed_donuts",
@@ -53,7 +105,25 @@
       "unit_label": "half dozen",
       "price_cents": 729,
       "max_quantity": 30,
-      "description": ""
+      "description": "A mix of 6 donuts from: Glazed, Blue Icing, Chocolate Icing, Maple Icing, White Icing, Strawberry Icing, Cinnamon Sugar. Icing flavors can have sprinkles (not Glazed or Cinnamon Sugar).",
+      "choices": [
+        {
+          "key": "mix",
+          "label": "Donut mix",
+          "options": [
+            "Glazed",
+            "Blue Icing",
+            "Chocolate Icing",
+            "Maple Icing",
+            "White Icing",
+            "Strawberry Icing",
+            "Cinnamon Sugar"
+          ],
+          "count": 6,
+          "mix": true,
+          "question": "How would you like your 6 donuts mixed? Flavors: Glazed, Blue Icing, Chocolate Icing, Maple Icing, White Icing, Strawberry Icing and Cinnamon Sugar. Icing flavors can have sprinkles. Or we can mix them for you."
+        }
+      ]
     },
     {
       "id": "half_dozen_big_donuts",
@@ -62,7 +132,18 @@
       "unit_label": "half dozen",
       "price_cents": 1245,
       "max_quantity": 30,
-      "description": ""
+      "description": "Any 6 Big Donuts. Big Donuts are all the single donuts priced $2.09; mix as you like.",
+      "choices": [
+        {
+          "key": "big_donuts",
+          "label": "Big Donuts",
+          "count": 6,
+          "pool": {
+            "category": "donuts",
+            "price_cents": 209
+          }
+        }
+      ]
     },
     {
       "id": "glazed_donut",
@@ -80,7 +161,36 @@
       "unit_label": "each",
       "price_cents": 135,
       "max_quantity": 60,
-      "description": ""
+      "description": "Choose a flavor: Glazed, Blue Icing, Chocolate Icing, Maple Icing, White Icing, Strawberry Icing or Cinnamon Sugar. Sprinkles are available on the icing flavors only (not Glazed or Cinnamon Sugar).",
+      "choices": [
+        {
+          "key": "flavor",
+          "label": "Flavor",
+          "options": [
+            "Glazed",
+            "Blue Icing",
+            "Chocolate Icing",
+            "Maple Icing",
+            "White Icing",
+            "Strawberry Icing",
+            "Cinnamon Sugar"
+          ]
+        },
+        {
+          "key": "sprinkles",
+          "label": "Sprinkles",
+          "options": [
+            "Yes",
+            "No"
+          ],
+          "not_with": {
+            "flavor": [
+              "Glazed",
+              "Cinnamon Sugar"
+            ]
+          }
+        }
+      ]
     },
     {
       "id": "cake_donut",
@@ -98,7 +208,17 @@
       "unit_label": "each",
       "price_cents": 179,
       "max_quantity": 60,
-      "description": ""
+      "description": "Long John filled with Bavarian cream. Flavors: Chocolate or Maple.",
+      "choices": [
+        {
+          "key": "flavor",
+          "label": "Flavor",
+          "options": [
+            "Chocolate",
+            "Maple"
+          ]
+        }
+      ]
     },
     {
       "id": "cinnamon_roll",
@@ -125,7 +245,19 @@
       "unit_label": "each",
       "price_cents": 209,
       "max_quantity": 60,
-      "description": ""
+      "description": "Twist donut. Flavors: Cinnamon Glazed, Cinnamon Sugar, Chocolate, Glazed.",
+      "choices": [
+        {
+          "key": "flavor",
+          "label": "Flavor",
+          "options": [
+            "Cinnamon Glazed",
+            "Cinnamon Sugar",
+            "Chocolate",
+            "Glazed"
+          ]
+        }
+      ]
     },
     {
       "id": "apple_fritter",
@@ -299,123 +431,216 @@
       ]
     },
     {
-      "id": "sausage_egg_cheese_biscuit_or_burrito",
-      "name": "Sausage, Egg & Cheese Biscuit or Burrito",
+      "id": "sausage_egg_cheese_biscuit",
+      "name": "Sausage, Egg & Cheese Biscuit",
       "category": "biscuit_sandwiches_burritos",
       "unit_label": "each",
       "price_cents": 365,
       "max_quantity": 30,
-      "description": "Served on a biscuit unless the customer asks for a burrito.",
+      "description": "",
       "modifiers": [
         {
-          "id": "sausage_egg_cheese_biscuit_or_burrito_make_it_a_burrito",
-          "name": "Make it a burrito",
-          "price_delta_cents": 0
-        },
-        {
-          "id": "sausage_egg_cheese_biscuit_or_burrito_extra_sausage",
+          "id": "sausage_egg_cheese_biscuit_extra_sausage",
           "name": "Extra sausage",
           "price_delta_cents": 99
         },
         {
-          "id": "sausage_egg_cheese_biscuit_or_burrito_extra_bacon",
+          "id": "sausage_egg_cheese_biscuit_extra_bacon",
           "name": "Extra bacon",
           "price_delta_cents": 99
         },
         {
-          "id": "sausage_egg_cheese_biscuit_or_burrito_extra_ham",
+          "id": "sausage_egg_cheese_biscuit_extra_ham",
           "name": "Extra ham",
           "price_delta_cents": 99
         },
         {
-          "id": "sausage_egg_cheese_biscuit_or_burrito_extra_egg",
+          "id": "sausage_egg_cheese_biscuit_extra_egg",
           "name": "Extra egg",
           "price_delta_cents": 50
         },
         {
-          "id": "sausage_egg_cheese_biscuit_or_burrito_extra_cheese",
+          "id": "sausage_egg_cheese_biscuit_extra_cheese",
           "name": "Extra cheese",
           "price_delta_cents": 50
         }
       ]
     },
     {
-      "id": "bacon_egg_cheese_biscuit_or_burrito",
-      "name": "Bacon, Egg & Cheese Biscuit or Burrito",
+      "id": "sausage_egg_cheese_burrito",
+      "name": "Sausage, Egg & Cheese Burrito",
       "category": "biscuit_sandwiches_burritos",
       "unit_label": "each",
       "price_cents": 365,
       "max_quantity": 30,
-      "description": "Served on a biscuit unless the customer asks for a burrito.",
+      "description": "",
       "modifiers": [
         {
-          "id": "bacon_egg_cheese_biscuit_or_burrito_make_it_a_burrito",
-          "name": "Make it a burrito",
-          "price_delta_cents": 0
-        },
-        {
-          "id": "bacon_egg_cheese_biscuit_or_burrito_extra_sausage",
+          "id": "sausage_egg_cheese_burrito_extra_sausage",
           "name": "Extra sausage",
           "price_delta_cents": 99
         },
         {
-          "id": "bacon_egg_cheese_biscuit_or_burrito_extra_bacon",
+          "id": "sausage_egg_cheese_burrito_extra_bacon",
           "name": "Extra bacon",
           "price_delta_cents": 99
         },
         {
-          "id": "bacon_egg_cheese_biscuit_or_burrito_extra_ham",
+          "id": "sausage_egg_cheese_burrito_extra_ham",
           "name": "Extra ham",
           "price_delta_cents": 99
         },
         {
-          "id": "bacon_egg_cheese_biscuit_or_burrito_extra_egg",
+          "id": "sausage_egg_cheese_burrito_extra_egg",
           "name": "Extra egg",
           "price_delta_cents": 50
         },
         {
-          "id": "bacon_egg_cheese_biscuit_or_burrito_extra_cheese",
+          "id": "sausage_egg_cheese_burrito_extra_cheese",
           "name": "Extra cheese",
           "price_delta_cents": 50
         }
       ]
     },
     {
-      "id": "ham_egg_cheese_biscuit_or_burrito",
-      "name": "Ham, Egg & Cheese Biscuit or Burrito",
+      "id": "bacon_egg_cheese_biscuit",
+      "name": "Bacon, Egg & Cheese Biscuit",
       "category": "biscuit_sandwiches_burritos",
       "unit_label": "each",
       "price_cents": 365,
       "max_quantity": 30,
-      "description": "Served on a biscuit unless the customer asks for a burrito.",
+      "description": "",
       "modifiers": [
         {
-          "id": "ham_egg_cheese_biscuit_or_burrito_make_it_a_burrito",
-          "name": "Make it a burrito",
-          "price_delta_cents": 0
-        },
-        {
-          "id": "ham_egg_cheese_biscuit_or_burrito_extra_sausage",
+          "id": "bacon_egg_cheese_biscuit_extra_sausage",
           "name": "Extra sausage",
           "price_delta_cents": 99
         },
         {
-          "id": "ham_egg_cheese_biscuit_or_burrito_extra_bacon",
+          "id": "bacon_egg_cheese_biscuit_extra_bacon",
           "name": "Extra bacon",
           "price_delta_cents": 99
         },
         {
-          "id": "ham_egg_cheese_biscuit_or_burrito_extra_ham",
+          "id": "bacon_egg_cheese_biscuit_extra_ham",
           "name": "Extra ham",
           "price_delta_cents": 99
         },
         {
-          "id": "ham_egg_cheese_biscuit_or_burrito_extra_egg",
+          "id": "bacon_egg_cheese_biscuit_extra_egg",
           "name": "Extra egg",
           "price_delta_cents": 50
         },
         {
-          "id": "ham_egg_cheese_biscuit_or_burrito_extra_cheese",
+          "id": "bacon_egg_cheese_biscuit_extra_cheese",
+          "name": "Extra cheese",
+          "price_delta_cents": 50
+        }
+      ]
+    },
+    {
+      "id": "bacon_egg_cheese_burrito",
+      "name": "Bacon, Egg & Cheese Burrito",
+      "category": "biscuit_sandwiches_burritos",
+      "unit_label": "each",
+      "price_cents": 365,
+      "max_quantity": 30,
+      "description": "",
+      "modifiers": [
+        {
+          "id": "bacon_egg_cheese_burrito_extra_sausage",
+          "name": "Extra sausage",
+          "price_delta_cents": 99
+        },
+        {
+          "id": "bacon_egg_cheese_burrito_extra_bacon",
+          "name": "Extra bacon",
+          "price_delta_cents": 99
+        },
+        {
+          "id": "bacon_egg_cheese_burrito_extra_ham",
+          "name": "Extra ham",
+          "price_delta_cents": 99
+        },
+        {
+          "id": "bacon_egg_cheese_burrito_extra_egg",
+          "name": "Extra egg",
+          "price_delta_cents": 50
+        },
+        {
+          "id": "bacon_egg_cheese_burrito_extra_cheese",
+          "name": "Extra cheese",
+          "price_delta_cents": 50
+        }
+      ]
+    },
+    {
+      "id": "ham_egg_cheese_biscuit",
+      "name": "Ham, Egg & Cheese Biscuit",
+      "category": "biscuit_sandwiches_burritos",
+      "unit_label": "each",
+      "price_cents": 365,
+      "max_quantity": 30,
+      "description": "",
+      "modifiers": [
+        {
+          "id": "ham_egg_cheese_biscuit_extra_sausage",
+          "name": "Extra sausage",
+          "price_delta_cents": 99
+        },
+        {
+          "id": "ham_egg_cheese_biscuit_extra_bacon",
+          "name": "Extra bacon",
+          "price_delta_cents": 99
+        },
+        {
+          "id": "ham_egg_cheese_biscuit_extra_ham",
+          "name": "Extra ham",
+          "price_delta_cents": 99
+        },
+        {
+          "id": "ham_egg_cheese_biscuit_extra_egg",
+          "name": "Extra egg",
+          "price_delta_cents": 50
+        },
+        {
+          "id": "ham_egg_cheese_biscuit_extra_cheese",
+          "name": "Extra cheese",
+          "price_delta_cents": 50
+        }
+      ]
+    },
+    {
+      "id": "ham_egg_cheese_burrito",
+      "name": "Ham, Egg & Cheese Burrito",
+      "category": "biscuit_sandwiches_burritos",
+      "unit_label": "each",
+      "price_cents": 365,
+      "max_quantity": 30,
+      "description": "",
+      "modifiers": [
+        {
+          "id": "ham_egg_cheese_burrito_extra_sausage",
+          "name": "Extra sausage",
+          "price_delta_cents": 99
+        },
+        {
+          "id": "ham_egg_cheese_burrito_extra_bacon",
+          "name": "Extra bacon",
+          "price_delta_cents": 99
+        },
+        {
+          "id": "ham_egg_cheese_burrito_extra_ham",
+          "name": "Extra ham",
+          "price_delta_cents": 99
+        },
+        {
+          "id": "ham_egg_cheese_burrito_extra_egg",
+          "name": "Extra egg",
+          "price_delta_cents": 50
+        },
+        {
+          "id": "ham_egg_cheese_burrito_extra_cheese",
           "name": "Extra cheese",
           "price_delta_cents": 50
         }
@@ -518,7 +743,7 @@
       "unit_label": "each",
       "price_cents": 259,
       "max_quantity": 30,
-      "description": ""
+      "description": "Made with Community Coffee."
     },
     {
       "id": "cappuccino",
@@ -527,7 +752,7 @@
       "unit_label": "each",
       "price_cents": 335,
       "max_quantity": 30,
-      "description": ""
+      "description": "Made with Community Coffee."
     },
     {
       "id": "water",

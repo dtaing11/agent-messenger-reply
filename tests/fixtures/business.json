@@ -2,7 +2,10 @@
   "_comment": "Test fixture business info (fixed hours) so tests don't change when the real hours do.",
   "name": "Town Donut & Breakfast",
   "location": "watson",
-  "address": "35055 3C LA-16, Denham Springs, LA",
+  "store_name": "Town Donut Watson",
+  "address": "35505 LA-16 #3C, Denham Springs, LA 70706",
+  "landmark": "Oak Point Plaza, next to Subway",
+  "maps_url": "https://www.google.com/maps/dir//35505+LA-16+%233C,+Denham+Springs,+LA+70706/data=!4m6!4m5!1m1!4e2!1m2!1m1!1s0x8626944e98ea8175:0x69c5739ea3fecf53",
   "phone": "(225) 380-5250",
   "timezone": "America/Chicago",
   "hours": {
@@ -43,5 +46,7 @@
   },
   "payment": "Payment at pickup. We do not take card details over Messenger.",
   "location_display": "Denham Springs / Watson",
-  "price_note": "All prices are before tax. Tax is added at pickup."
+  "price_note": "All prices are before tax. Tax is added at pickup.",
+  "assistant_name": "Sprinkle",
+  "assistant_credit": "My name is Sprinkle, built by Dina Taing. If you'd like a similar product, please visit https://www.dinataing.dev/"
 }

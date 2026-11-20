@@ -32,6 +32,7 @@ PLAIN_FIELDS = (
     "meta_graph_api_version",
     "ai_model",
     "ai_fallback_model",
+    "ai_deny_data_collection",
     "twilio_account_sid",
     "twilio_phone_number",
     "owner_phone_numbers",
@@ -39,6 +40,8 @@ PLAIN_FIELDS = (
     "pending_order_expiry_minutes",
     "large_order_threshold_cents",
     "customer_can_cancel_accepted",
+    "require_customer_phone",
+    "pickup_check_after_minutes",
     "pause_bot_on_staff_reply",
 )
 

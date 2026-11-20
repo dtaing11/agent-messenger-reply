@@ -15,24 +15,27 @@ class OrderStatus(StrEnum):
     EXPIRED = "EXPIRED"
     PREPARING = "PREPARING"
     READY = "READY"
-    COMPLETED = "COMPLETED"
+    COMPLETED = "COMPLETED"  # picked up
+    NO_SHOW = "NO_SHOW"  # accepted, but the customer never came (owner-only record)
 
 
 ORDER_TRANSITIONS: dict[OrderStatus, frozenset[OrderStatus]] = {
     OrderStatus.PENDING_ACCEPTANCE: frozenset(
         {OrderStatus.ACCEPTED, OrderStatus.REJECTED, OrderStatus.CANCELLED, OrderStatus.EXPIRED}
     ),
-    # Owner may skip PREPARING and go straight to READY ("READY 1042" by SMS).
-    OrderStatus.ACCEPTED: frozenset({OrderStatus.PREPARING, OrderStatus.READY, OrderStatus.CANCELLED}),
-    OrderStatus.PREPARING: frozenset({OrderStatus.READY, OrderStatus.CANCELLED}),
-    OrderStatus.READY: frozenset({OrderStatus.COMPLETED}),
+    # Owner may skip PREPARING/READY: "READY 1042" or "PICKED 1042" straight from ACCEPTED.
+    OrderStatus.ACCEPTED: frozenset({OrderStatus.PREPARING, OrderStatus.READY, OrderStatus.CANCELLED,
+                                     OrderStatus.COMPLETED, OrderStatus.NO_SHOW}),
+    OrderStatus.PREPARING: frozenset({OrderStatus.READY, OrderStatus.CANCELLED, OrderStatus.COMPLETED, OrderStatus.NO_SHOW}),
+    OrderStatus.READY: frozenset({OrderStatus.COMPLETED, OrderStatus.NO_SHOW}),
     OrderStatus.REJECTED: frozenset(),
     OrderStatus.CANCELLED: frozenset(),
     OrderStatus.EXPIRED: frozenset(),
     OrderStatus.COMPLETED: frozenset(),
+    OrderStatus.NO_SHOW: frozenset({OrderStatus.COMPLETED}),  # fix a mistaken no-show
 }
 
-TERMINAL_STATUSES = frozenset(s for s, nxt in ORDER_TRANSITIONS.items() if not nxt)
+TERMINAL_STATUSES = frozenset(s for s, nxt in ORDER_TRANSITIONS.items() if not nxt) | {OrderStatus.NO_SHOW}
 
 
 class InvalidTransition(Exception):

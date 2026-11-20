@@ -8,6 +8,34 @@ POSTBACK_CONFIRM = "CONFIRM_ORDER:"
 POSTBACK_MODIFY = "MODIFY_ORDER"
 
 
+MAX_TEXT = 2000  # Messenger's limit per message
+
+
+def split_message(text: str, limit: int = MAX_TEXT) -> list[str]:
+    """Split long text into Messenger-sized parts at line (then word) boundaries,
+    so nothing at the end of a long summary (like the pickup location) is cut off."""
+    parts: list[str] = []
+    cur = ""
+    for line in text.split("\n"):
+        while len(line) > limit:
+            cut = line.rfind(" ", 0, limit)
+            cut = cut if cut > 0 else limit
+            if cur:
+                parts.append(cur)
+                cur = ""
+            parts.append(line[:cut])
+            line = line[cut:].lstrip()
+        candidate = f"{cur}\n{line}" if cur else line
+        if len(candidate) > limit:
+            parts.append(cur)
+            cur = line
+        else:
+            cur = candidate
+    if cur.strip() or not parts:
+        parts.append(cur)
+    return [p.strip("\n") for p in parts if p.strip()] or [""]
+
+
 _shared_http: httpx.AsyncClient | None = None
 
 
@@ -36,17 +64,31 @@ class MessengerClient:
         resp.raise_for_status()
         return resp.json()
 
-    async def send_text(self, psid: str, text: str) -> dict:
-        return await self._send({"recipient": {"id": psid}, "messaging_type": "RESPONSE", "message": {"text": text[:2000]}})
+    async def send_text(self, psid: str, text: str, messaging_type: str = "RESPONSE", tag: str | None = None) -> dict:
+        result: dict = {}
+        for part in split_message(text):
+            payload = {"recipient": {"id": psid}, "messaging_type": messaging_type, "message": {"text": part}}
+            if tag:
+                payload["tag"] = tag
+            result = await self._send(payload)
+        return result
+
+    async def send_update(self, psid: str, text: str) -> dict:
+        """A message the customer didn't just ask for (order accepted/ready). Allowed within
+        24 hours of their last message."""
+        return await self.send_text(psid, text, messaging_type="UPDATE")
 
     async def send_order_summary(self, psid: str, summary_text: str, token: str) -> dict:
         """Summary with Confirm / Modify buttons. The confirm payload carries the token,
         which the worker validates deterministically (no LLM involved)."""
+        *head, last = split_message(summary_text)
+        for part in head:
+            await self._send({"recipient": {"id": psid}, "messaging_type": "RESPONSE", "message": {"text": part}})
         return await self._send({
             "recipient": {"id": psid},
             "messaging_type": "RESPONSE",
             "message": {
-                "text": summary_text[:2000],
+                "text": last,
                 "quick_replies": [
                     {"content_type": "text", "title": "Confirm Order", "payload": POSTBACK_CONFIRM + token},
                     {"content_type": "text", "title": "Modify", "payload": POSTBACK_MODIFY},

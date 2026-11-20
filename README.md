@@ -2,8 +2,10 @@
 
 Self-hosted FastAPI service that answers the Town Donut & Breakfast Facebook Page on
 Messenger, builds pickup orders, and texts the owners for acceptance. Full scope lives in
-the project plan (v3). This repository currently covers **Phase 1–2**: the Messenger
-webhook, durable queue, SQLite schema, cart, deterministic totals and the order state machine.
+the project plan (v3). It covers the Messenger webhook and durable queue, the order backend,
+the developer portal, the AI ordering assistant ("Sprinkle", DeepSeek via OpenRouter with
+tools), store FAQ search, owner texts through Twilio (with text-back commands), customer
+order updates on Messenger, a menu editor, and customer profiles with pickup history.
 
 > `data/menu.json` is the real menu (transcribed from the owner's menu board, 2026-11-19).
 > Store hours are 4:30 AM to 12:30 PM every day, holidays included. **Pickup lead time and booking horizon are still placeholders.**
@@ -26,11 +28,16 @@ webhook, durable queue, SQLite schema, cart, deterministic totals and the order 
 | Confirmation tokens bound to customer + cart version + expiry | done |
 | Atomic order + owner-SMS outbox rows (one per owner phone), idempotent re-confirmation | done |
 | Order transitions with conditional updates and an audit trail; pending-order expiry; customer cancel rules | done |
-| Messenger Send API client (quick-reply Confirm / Modify) | written, mocked only (no Meta app yet) |
-| LLM agent (OpenRouter) | **Phase 5**: a fixed placeholder reply is sent for now |
-| RAG (FastEmbed + Qdrant + FTS5 retrieval) | Phase 3 |
-| Twilio sending + owner SMS commands | Phase 6 (outbox rows are already written) |
-| Developer portal | done (first version, see below) |
+| Messenger Send API client (quick-reply Confirm / Modify; long messages split, never cut) | done |
+| AI assistant: OpenRouter tool loop (menu, FAQ, cart, pickup, summary, cancel, hand-off), fallback model, privacy routing | done |
+| Store FAQ (owner-approved docs in `data/knowledge/faq.json`, FTS5 search) | done; semantic search (FastEmbed + Qdrant) later |
+| Owner texts via Twilio with retries; delivery status callback | done |
+| Owner text commands: `YES 12`, `NO 12`, `READY 12`, `PICKED 12`, `NOSHOW 12`, `ORDERS`, `PAUSE`, `RESUME`, `HELP` | done |
+| Customer Messenger updates on accept / decline / ready / expiry (within Meta's 24 h window) | done |
+| Pickup check: owners are asked "picked up?" after each pickup time; no-shows kept per customer (owner-only) and flagged on their next order | done |
+| Customer phone number collected with name and pickup time | done |
+| Menu editor in the portal (prices, items, add-ons, categories, flavors) | done |
+| Developer portal | done (see below) |
 
 ## Developer portal
 
@@ -45,6 +52,13 @@ A private web page for setting everything up without editing files:
   tunnel, sets the Meta app's webhook to your callback URL and subscribes your Page.
 - **Overview:** bot on/off, worker heartbeat, queue, last webhook, integration status
   (refreshes every 10 s). The bot starts **paused** and won't reply until you turn it on.
+- **Menu:** change prices, rename, hide/show, add and remove items, edit add-ons and flavor
+  choices, add/rename/reorder categories. Changes apply to the bot immediately. Once you edit
+  here, startup stops re-importing `data/menu.json` (a button re-imports it on purpose, and
+  **Download menu.json** backs up the current menu).
+- **Orders:** accept, decline, ready, picked up, no-show (same as the owner text commands).
+- **Customers:** name, phone, orders, picked-up and no-show counts, recent messages, and a
+  **Resume the bot** button after a hand-off.
 - **Business:** owner phones, tax, order expiry, large-order flag, staff-reply pause.
 - Saved values apply on the next message, with no restart. Values saved in the portal
   override `.env`.
@@ -86,7 +100,10 @@ Each is configurable in `.env` (or `data/*.json`) so the answer doesn't need a c
 
 | Question | Assumed for now | Setting |
 |---|---|---|
-| Real menu and prices | **Confirmed:** from the menu board, 40 items; extras (meat $0.99, egg/cheese $0.50) are modifiers; biscuit sandwiches have a free "Make it a burrito" option | `data/menu.json` |
+| Real menu and prices | **Confirmed:** from the menu board; extras (meat $0.99, egg/cheese $0.50) are modifiers; biscuits and burritos are separate items at the same price; Twist, Long John and Icing donuts need a flavor; sprinkles only on icing flavors; "Big Donuts" = every single donut priced $2.09 | `data/menu.json` or the portal Menu page |
+| Pickup location | **Confirmed:** Town Donut Watson, Oak Point Plaza next to Subway, 35505 LA-16 #3C, Denham Springs, LA 70706 (shown on every summary and confirmation) | `data/business.json` |
+| Customer phone required | Yes | `REQUIRE_CUSTOMER_PHONE` |
+| When to ask owners "picked up?" | 30 min after pickup time | `PICKUP_CHECK_AFTER_MINUTES` (`0` = never) |
 | Store hours, holidays, lead time | **Confirmed:** 4:30 AM–12:30 PM every day, no holiday closures. Assumed: 30 min lead; 14 days ahead; 15 min slots | `data/business.json` |
 | Charge tax in the summary? | **Confirmed: no.** Summaries and owner SMS say prices are before tax and remind the customer tax is added at pickup | `TAX_RATE_BPS=0` |
 | Pending order expiry | Unanswered orders expire after 120 min | `PENDING_ORDER_EXPIRY_MINUTES` (`0` = never) |
