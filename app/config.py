@@ -63,6 +63,10 @@ class Settings(BaseSettings):
     customer_can_cancel_accepted: bool = False
     require_customer_phone: bool = True
     pickup_check_after_minutes: int = Field(30, ge=0, le=720)  # 0 = don't ask owners
+    # Remind a customer once when they picked items but didn't give the pickup name or phone:
+    # this long after their last message (0 = never), or sooner when the pickup time is close.
+    contact_reminder_minutes: int = Field(60, ge=0, le=720)
+    contact_reminder_soon_minutes: int = Field(15, ge=1, le=120)
     # Where owner alerts go. "messenger": owners' linked Facebook accounts, with a text to the owner
     # phones as the backup whenever no linked owner can be reached on Messenger (Meta's 24-hour rule).
     owner_alert_channel: Literal["messenger", "sms", "both"] = "messenger"

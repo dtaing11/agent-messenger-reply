@@ -30,7 +30,7 @@ from app.integrations.messenger import (
     MessengerClient,
 )
 from app.services import conversation as conv_svc
-from app.services import notify, owner_accounts, owner_commands, photos, search, sessions, turns
+from app.services import notify, owner_accounts, owner_commands, photos, reminders, search, sessions, turns
 from app.services import order as order_svc
 from app.services.business import BusinessInfo, load_business
 from app.settings.runtime import effective_settings, set_marker
@@ -123,6 +123,8 @@ class MessageProcessor:
 
         if event.event_type == "customer_update":
             return await self._handle_customer_update(ctx, p, event.external_event_id)
+        if event.event_type == reminders.EVENT_TYPE:
+            return await self._handle_contact_reminder(ctx, p, event.external_event_id)
         cid, raw = ctx.customer_id, p["event"]
 
         if event.event_type == "echo":
@@ -347,6 +349,24 @@ class MessageProcessor:
         conv_svc.record_message(ctx.conn, ctx.customer_id, "assistant", p["text"], key)
         return "done"
 
+    async def _handle_contact_reminder(self, ctx: _Ctx, p: dict, event_key: str) -> str:
+        """The one reminder about a missing pickup name or phone number. Everything is checked
+        again here: if the customer wrote since it was queued, the reply to that handles it."""
+        key = f"reminder:{event_key}"
+        if ctx.conn.execute("SELECT 1 FROM messages WHERE external_message_id = ?", (key,)).fetchone():
+            return "done"  # already sent (retry after a crash)
+        conv = conv_svc.get_conversation(ctx.conn, ctx.customer_id)
+        cart = ctx.conn.execute("SELECT customer_id FROM carts WHERE id = ?", (int(p["cart_id"]),)).fetchone()
+        if cart is None or cart["customer_id"] != ctx.customer_id or conv["last_customer_message_at"] != p.get("last_customer_message_at"):
+            return "ignored"
+        due, missing = reminders.still_due(ctx.conn, ctx.settings, int(p["cart_id"]), ctx.now)
+        if not due:
+            return "ignored"
+        text = reminders.reminder_text(missing)
+        await ctx.responder.send_update(ctx.psid, text)
+        conv_svc.record_message(ctx.conn, ctx.customer_id, "assistant", text, key)
+        return "done"
+
     def _handle_echo(self, ctx: _Ctx, raw: dict) -> str:
         msg = raw["message"]
         if ctx.settings.meta_app_id and str(msg.get("app_id", "")) == ctx.settings.meta_app_id:
@@ -429,9 +449,10 @@ def housekeeping_once(conn: sqlite3.Connection, settings: Settings, biz: Busines
     asked = owner_commands.queue_pickup_checks(conn, settings, biz, now)
     reminded = owner_commands.queue_day_reminders(conn, settings, biz, now)
     checkins = owner_accounts.queue_checkins(conn, biz.timezone, now) if settings.owner_alert_channel != "sms" else []
-    if released or expired or asked or reminded or checkins:
-        log.info("housekeeping released=%d expired_orders=%s pickup_checks=%s day_reminders=%s owner_checkins=%s",
-                 released, expired, asked, reminded, checkins)
+    nudged = reminders.queue_contact_reminders(conn, settings, now)
+    if released or expired or asked or reminded or checkins or nudged:
+        log.info("housekeeping released=%d expired_orders=%s pickup_checks=%s day_reminders=%s owner_checkins=%s "
+                 "contact_reminders=%s", released, expired, asked, reminded, checkins, nudged)
 
 
 async def _housekeeping(settings: Settings, processor: MessageProcessor) -> None:
