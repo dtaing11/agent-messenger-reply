@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Customers{% endblock %}
+{% block content %}
+<h2>Customers</h2>
+<p class="muted small">Pickup history is for you and the owners only. The bot never mentions it to customers.</p>
+{% if rows %}
+<div class="overflow-auto">
+<table class="striped">
+  <thead><tr><th>Name</th><th>Phone</th><th class="num">Orders</th><th class="num">Picked up</th><th class="num">No-shows</th><th>Last order</th><th>Bot</th></tr></thead>
+  <tbody>{% for r in rows %}
+    <tr>
+      <td><a href="/admin/customers/{{ r.id }}">{{ r.name or ('Messenger …' ~ r.facebook_psid[-4:]) }}</a></td>
+      <td>{{ r.phone|phone }}</td>
+      <td class="num">{{ r.orders }}</td>
+      <td class="num">{{ r.picked_up or 0 }}</td>
+      <td class="num">{% if r.no_shows %}<span class="badge down">{{ r.no_shows }}</span>{% else %}0{% endif %}</td>
+      <td>{{ r.last_order_at|localtime if r.last_order_at else '' }}</td>
+      <td>{% if r.bot_enabled == 0 %}<span class="badge degraded" title="{{ r.handoff_reason or '' }}">needs a person</span>{% else %}on{% endif %}</td>
+    </tr>
+  {% endfor %}</tbody>
+</table>
+</div>
+{% else %}<p class="muted">No customers yet. They appear here after their first message.</p>{% endif %}
+{% endblock %}

@@ -15,7 +15,7 @@ PICKUP = datetime(2026, 11, 19, 7, 30, tzinfo=ZoneInfo("America/Chicago"))
 def ready_cart(conn, customer_id):
     cart.add_item(conn, customer_id, "glazed_dozen", 2)
     cart.add_item(conn, customer_id, "sausage_kolache", 6)
-    cart.set_pickup_details(conn, customer_id, pickup_time=PICKUP, customer_name="Jessica")
+    cart.set_pickup_details(conn, customer_id, pickup_time=PICKUP, customer_name="Jessica", customer_phone="225-555-0123")
     return customer_id
 
 
@@ -115,7 +115,7 @@ def test_pickup_revalidated_at_submit(conn, ready_cart, biz, settings):
 
 def test_large_order_flagged(conn, customer_id, biz, settings):
     cart.add_item(conn, customer_id, "assorted_dozen", 10)  # $140
-    cart.set_pickup_details(conn, customer_id, pickup_time=PICKUP, customer_name="School")
+    cart.set_pickup_details(conn, customer_id, pickup_time=PICKUP, customer_name="School", customer_phone="225-555-0123")
     s = order_svc.present_order_summary(conn, customer_id, biz, settings, NOW)
     o = order_svc.submit_order(conn, customer_id, s.token, biz, settings, NOW)
     assert o["needs_review"] == 1

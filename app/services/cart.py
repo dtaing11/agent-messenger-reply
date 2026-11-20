@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from app.database.connection import transaction
-from app.services import custom_items, menu
+from app.services import custom_items, menu, phone
 from app.services.pricing import Totals, compute_totals
 from app.timeutil import from_db, to_db
 
@@ -40,6 +40,7 @@ class CartLine:
     surcharge_cents: int = 0
     surcharge_pending: bool = False  # a surcharge applies but the store sets the amount
     needs_review: bool = False
+    min_days_ahead: int = 0  # calendar days of notice this item needs (Special Design Donut: 1)
 
 
 @dataclass
@@ -53,6 +54,7 @@ class CartView:
     customer_name: str | None
     notes: str
     unavailable: list[str] = field(default_factory=list)
+    customer_phone: str | None = None  # E.164
 
     @property
     def is_empty(self) -> bool:
@@ -65,6 +67,13 @@ class CartView:
     @property
     def needs_review(self) -> bool:
         return any(l.needs_review for l in self.lines)
+
+    def advance_notice(self) -> tuple[int, str | None]:
+        """(days, what to tell the customer) for the item in the cart needing the most notice."""
+        line = max(self.lines, key=lambda l: l.min_days_ahead, default=None)
+        if line is None or not line.min_days_ahead:
+            return 0, None
+        return line.min_days_ahead, custom_items.notice_text(line.name, line.min_days_ahead)
 
 
 def get_or_create_cart(conn: sqlite3.Connection, customer_id: int) -> sqlite3.Row:
@@ -92,18 +101,44 @@ def _normalize_modifiers(conn: sqlite3.Connection, item_id: str, modifier_ids: l
     return json.dumps(ids)
 
 
-def _normalize_details(item: sqlite3.Row, details: dict | None) -> str:
+def _pool_selection(conn: sqlite3.Connection, item: sqlite3.Row, c: custom_items.Choice, details: dict) -> str:
+    """A mix like '2 Twist (Chocolate), 2 Cinnamon Roll, 2 Pinecone' for a pick-any item."""
+    names = [r["name"] for r in menu.pool_items(conn, c.pool_category, c.pool_price_cents)]
+    labels = menu.pool_labels(conn, c.pool_category, c.pool_price_cents)
+    raw = " ".join(str(details.get(c.key) or details.get(c.label) or details.get("selection") or "").split())
+    question = (f"Which {c.count} {c.label} would you like? Pick any mix of: " + "; ".join(labels) + "."
+                if labels else f"Which {c.label} would you like?")
+    if not raw or not any(n.lower() in raw.lower() for n in names):
+        raise custom_items.MissingDetails([c.key], [question])
+    if len(raw) > 200:
+        raise CartError("Please keep the donut selection short, like: 2 Twist (Chocolate), 2 Cinnamon Roll, 2 Pinecone.")
+    return raw
+
+
+def _normalize_details(conn: sqlite3.Connection, item: sqlite3.Row, details: dict | None) -> str:
     rules = custom_items.CustomRules.from_json(item["custom_rules"])
-    if rules is None:
-        if details:
-            raise CartError(f"{item['name']} doesn't take custom details.")
-        return "{}"
+    choices = custom_items.parse_choices(item["choices"])
+    details = {k: v for k, v in (details or {}).items() if v not in (None, "")}
+    out: dict = {}
     try:
-        return custom_items.canonical(custom_items.normalize_details(rules, details))
+        if choices:
+            out.update(custom_items.apply_choices(choices, item["name"], details))
+            for c in (c for c in choices if c.is_pool):
+                out[c.key] = _pool_selection(conn, item, c, details)
+            taken = {c.key for c in choices} | {c.label for c in choices} | {c.label.lower() for c in choices}
+            details = {k: v for k, v in details.items() if k not in taken}
+        if rules is not None:
+            out.update(custom_items.normalize_details(rules, details))
+        elif details:
+            allowed = ", ".join(c.key for c in choices) or "none"
+            raise CartError(f"{item['name']} doesn't take those details (allowed: {allowed}).")
     except custom_items.MissingDetails as exc:
         raise DetailsNeeded(item["name"], exc.missing, exc.questions) from exc
+    except CartError:
+        raise
     except ValueError as exc:
         raise CartError(str(exc)) from exc
+    return custom_items.canonical(out) if out else "{}"
 
 
 def _check_item(conn: sqlite3.Connection, item_id: str, quantity: int) -> sqlite3.Row:
@@ -127,7 +162,7 @@ def add_item(
         cart = get_or_create_cart(conn, customer_id)
         mods = _normalize_modifiers(conn, item_id, modifiers)
         item = _check_item(conn, item_id, quantity)
-        det = _normalize_details(item, details)
+        det = _normalize_details(conn, item, details)
         existing = conn.execute(
             "SELECT id, quantity FROM cart_items WHERE cart_id = ? AND item_id = ? AND modifiers = ? AND details = ?",
             (cart["id"], item_id, mods, det),
@@ -164,7 +199,7 @@ def update_item(
         else:
             item = _check_item(conn, line["item_id"], quantity)
             mods = line["modifiers"] if modifiers is None else _normalize_modifiers(conn, line["item_id"], modifiers)
-            det = line["details"] if details is None else _normalize_details(item, details)
+            det = line["details"] if details is None else _normalize_details(conn, item, details)
             clash = conn.execute(
                 "SELECT id FROM cart_items WHERE cart_id = ? AND item_id = ? AND modifiers = ? AND details = ? AND id != ?",
                 (cart["id"], line["item_id"], mods, det, line_id),
@@ -197,8 +232,15 @@ def set_pickup_details(
     pickup_time: datetime | None = None,
     customer_name: str | None = None,
     notes: str | None = None,
+    customer_phone: str | None = None,
 ) -> CartView:
-    """Store already-validated pickup details. Callers validate pickup_time first."""
+    """Store already-validated pickup details. Callers validate pickup_time first.
+    customer_phone may be typed any common way; it's stored as E.164."""
+    if customer_phone is not None:
+        try:
+            customer_phone = phone.normalize_us(customer_phone)
+        except phone.PhoneError as exc:
+            raise CartError(str(exc)) from exc
     if customer_name is not None:
         customer_name = customer_name.strip()
         if not (1 <= len(customer_name) <= 80):
@@ -211,9 +253,10 @@ def set_pickup_details(
             """UPDATE carts SET
                  pickup_time = COALESCE(?, pickup_time),
                  customer_name = COALESCE(?, customer_name),
+                 customer_phone = COALESCE(?, customer_phone),
                  notes = COALESCE(?, notes)
                WHERE id = ?""",
-            (to_db(pickup_time) if pickup_time else None, customer_name, notes, cart["id"]),
+            (to_db(pickup_time) if pickup_time else None, customer_name, customer_phone, notes, cart["id"]),
         )
         _bump(conn, cart["id"])
     return view_cart(conn, customer_id)
@@ -261,6 +304,7 @@ def _view(conn: sqlite3.Connection, cart: sqlite3.Row, tax_rate_bps: int) -> Car
                 r["line_id"], r["item_id"], r["name"], r["unit_label"], r["quantity"], tuple(mods), unit,
                 unit * r["quantity"], ok, details=details, surcharge_cents=extra, surcharge_pending=pending,
                 needs_review=bool(rules and rules.always_review),
+                min_days_ahead=rules.min_days_ahead if rules else 0,
             )
         )
     return CartView(
@@ -273,4 +317,5 @@ def _view(conn: sqlite3.Connection, cart: sqlite3.Row, tax_rate_bps: int) -> Car
         customer_name=cart["customer_name"],
         notes=cart["notes"],
         unavailable=unavailable,
+        customer_phone=cart["customer_phone"],
     )

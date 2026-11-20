@@ -23,6 +23,10 @@ from app.agent.state_machine import (
         ("ACCEPTED", "CANCELLED"),
         ("PREPARING", "READY"),
         ("READY", "COMPLETED"),
+        ("ACCEPTED", "COMPLETED"),
+        ("READY", "NO_SHOW"),
+        ("ACCEPTED", "NO_SHOW"),
+        ("NO_SHOW", "COMPLETED"),
     ],
 )
 def test_allowed(a, b):
@@ -31,7 +35,8 @@ def test_allowed(a, b):
 
 @pytest.mark.parametrize(
     "a,b",
-    [("PENDING_ACCEPTANCE", "READY"), ("REJECTED", "ACCEPTED"), ("COMPLETED", "READY"), ("READY", "CANCELLED")],
+    [("PENDING_ACCEPTANCE", "READY"), ("REJECTED", "ACCEPTED"), ("COMPLETED", "READY"), ("READY", "CANCELLED"),
+     ("PENDING_ACCEPTANCE", "NO_SHOW"), ("COMPLETED", "NO_SHOW")],
 )
 def test_forbidden(a, b):
     with pytest.raises(InvalidTransition):
@@ -39,7 +44,8 @@ def test_forbidden(a, b):
 
 
 def test_terminal_statuses():
-    assert TERMINAL_STATUSES == {OrderStatus.REJECTED, OrderStatus.CANCELLED, OrderStatus.EXPIRED, OrderStatus.COMPLETED}
+    assert TERMINAL_STATUSES == {OrderStatus.REJECTED, OrderStatus.CANCELLED, OrderStatus.EXPIRED, OrderStatus.COMPLETED,
+                                 OrderStatus.NO_SHOW}
 
 
 def test_conversation_transitions():

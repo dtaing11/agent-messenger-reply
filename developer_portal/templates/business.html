@@ -27,19 +27,15 @@
 
 <article>
   <header><strong>Store</strong></header>
-  <p>{{ biz.raw.get('location_display', biz.location) }} · {{ biz.raw.get('address', '') }} · {{ biz.raw.get('phone', '') }}</p>
+  <p>{{ biz.store_name }}{% if biz.landmark %}, {{ biz.landmark }}{% endif %} · {{ biz.address }} · {{ biz.raw.get('phone', '') }}
+    {% if biz.maps_url %}· <a href="{{ biz.maps_url }}" target="_blank" rel="noopener">Map</a>{% endif %}</p>
   <p>Hours:
     {% for day, h in biz.hours.items() %}{{ day[:3]|title }} {% if h %}{{ h[0].strftime('%-I:%M %p') }}–{{ h[1].strftime('%-I:%M %p') }}{% else %}closed{% endif %}{% if not loop.last %} · {% endif %}{% endfor %}</p>
-  <p class="muted small">Pickup needs {{ biz.pickup.min_lead_minutes }} min notice, up to {{ biz.pickup.max_days_ahead }} days ahead. Hours and menu are edited in <code>data/business.json</code> and <code>data/menu.json</code> for now.</p>
+  <p class="muted small">Pickup needs {{ biz.pickup.min_lead_minutes }} min notice, up to {{ biz.pickup.max_days_ahead }} days ahead. Hours and address are edited in <code>data/business.json</code> for now.</p>
 </article>
 
 <article>
-  <header><strong>Menu</strong> <small class="muted">({{ items|length }} items, prices before tax)</small></header>
-  <div class="overflow-auto">
-  <table class="striped">
-    <thead><tr><th>Item</th><th>Category</th><th class="num">Price</th></tr></thead>
-    <tbody>{% for it in items %}<tr><td>{{ it.name }}</td><td>{{ it.category|replace('_', ' ') }}</td><td class="num">{{ it.price_cents|money }}</td></tr>{% endfor %}</tbody>
-  </table>
-  </div>
+  <header><strong>Menu</strong> <small class="muted">({{ items|length }} items shown to customers)</small></header>
+  <p>Change prices, add items and manage categories on the <a href="/admin/menu">Menu</a> page.</p>
 </article>
 {% endblock %}

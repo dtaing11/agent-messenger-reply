@@ -13,18 +13,14 @@ import logging
 import uvicorn
 
 from app.config import get_settings
-from app.database.connection import connect, migrate
-from app.services.menu import seed_menu
+from app.database.bootstrap import prepare
 from app.workers.message_worker import run_worker
 
 
 async def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     settings = get_settings()
-    conn = connect(settings.database_path)
-    migrate(conn)
-    seed_menu(conn, settings.menu_path)
-    conn.close()
+    prepare(settings)
 
     public = uvicorn.Server(uvicorn.Config("app.main:app", host="127.0.0.1", port=8000, proxy_headers=True, log_level="info"))
     admin = uvicorn.Server(uvicorn.Config("app.admin.app:app", host=settings.admin_host, port=settings.admin_port, log_level="info"))

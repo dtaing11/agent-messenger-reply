@@ -6,12 +6,15 @@ public webhook app, so nothing here is reachable through the Cloudflare Tunnel.
     uvicorn app.admin.app:app --host 127.0.0.1 --port 8001
 """
 
+import json
 import logging
 import secrets
 import shutil
 import sqlite3
 from contextlib import asynccontextmanager
 from pathlib import Path
+from datetime import timedelta
+from urllib.parse import quote, urlencode
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -23,14 +26,20 @@ from pydantic import ValidationError
 
 from app.admin import auth
 from app.config import Settings, get_settings
-from app.database.connection import connect, migrate
+from app.database.bootstrap import prepare
+from app.database.connection import connect
 from app.deps import get_db
 from app.integrations import checks
-from app.services.menu import seed_menu
+from app.agent.state_machine import OrderStatus
+from app.integrations import twilio
+from app.services import conversation as conv_svc
+from app.services import customers, menu_admin, owner_accounts, owner_commands
+from app.services.business import load_business
+from app.services.phone import display as phone_display
 from app.services.pricing import money
 from app.settings import runtime
 from app.settings.secret_store import SecretStore
-from app.timeutil import from_db, utcnow
+from app.timeutil import from_db, to_db, utcnow
 from app.workers import queue
 
 log = logging.getLogger(__name__)
@@ -60,6 +69,8 @@ def _ago(seconds: float | None) -> str:
 templates.env.filters["money"] = money
 templates.env.filters["localtime"] = _localtime
 templates.env.filters["ago"] = _ago
+templates.env.filters["phone"] = phone_display
+templates.env.filters["fromjson"] = lambda v: json.loads(v) if v else None
 
 CSP = (
     "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
@@ -82,8 +93,7 @@ async def lifespan(app: FastAPI):
     app.state.secret_store = SecretStore.from_path(settings.master_key_path)
     app.state.http = httpx.AsyncClient(timeout=15.0)
     conn = connect(settings.database_path)
-    migrate(conn)
-    seed_menu(conn, settings.menu_path)
+    prepare(settings, conn)
     code = auth.issue_bootstrap_code(conn, utcnow(), bootstrap_code_file(settings))
     conn.close()
     if code:
@@ -432,12 +442,238 @@ def create_admin_app() -> FastAPI:
     async def test_twilio(request: Request, conn=Depends(get_db), user=Depends(admin_user)):
         return await _run_check(request, conn, user, "twilio", checks.test_twilio, TW_PLAIN, TW_SECRET)
 
+    # ---- menu editor
+    def _menu_done(request: Request, conn, user, action: str, detail: str, message: str, anchor: str = ""):
+        auth.audit(conn, user.username, f"menu.{action}", detail[:200], "ok")
+        target = f"/admin/menu?saved={quote(message)}" + (f"#{anchor}" if anchor else "")
+        if request.headers.get("hx-request"):
+            return Response(status_code=204, headers={"HX-Redirect": target})
+        return RedirectResponse(target, status_code=303)
+
+    def _menu_error(request: Request, exc: Exception):
+        msg = str(exc) if isinstance(exc, menu_admin.MenuError) else "That change couldn't be saved."
+        if request.headers.get("hx-request"):
+            return result(request, False, msg)
+        return RedirectResponse(f"/admin/menu?error={quote(msg)}", status_code=303)
+
+    @app.get("/admin/menu")
+    def menu_page(request: Request, conn=Depends(get_db), user=Depends(current_user)):
+        archived = conn.execute("SELECT COUNT(*) FROM menu_items WHERE archived = 1").fetchone()[0]
+        return page(request, "menu.html", user, tree=menu_admin.menu_tree(conn), cats=menu_admin.categories(conn),
+                    archived=archived, edited=menu_admin.edited_in_portal(conn),
+                    saved=request.query_params.get("saved"), error=request.query_params.get("error"))
+
+    @app.get("/admin/menu/export")
+    def menu_export(conn=Depends(get_db), user=Depends(current_user)):
+        body = json.dumps(menu_admin.export_menu(conn), indent=2, ensure_ascii=False) + "\n"
+        return Response(body, media_type="application/json",
+                        headers={"Content-Disposition": 'attachment; filename="menu.json"'})
+
+    @app.post("/admin/menu/categories")
+    async def menu_add_category(request: Request, conn=Depends(get_db), user=Depends(admin_user)):
+        form = await request.form()
+        try:
+            cat_id = menu_admin.add_category(conn, str(form.get("name", "")))
+        except menu_admin.MenuError as exc:
+            return _menu_error(request, exc)
+        return _menu_done(request, conn, user, "category.add", cat_id, "Category added.", f"cat-{cat_id}")
+
+    @app.post("/admin/menu/categories/{cat_id}")
+    async def menu_edit_category(cat_id: str, request: Request, conn=Depends(get_db), user=Depends(admin_user)):
+        form = await request.form()
+        action = str(form.get("action", "rename"))
+        try:
+            if action == "delete":
+                menu_admin.delete_category(conn, cat_id)
+                return _menu_done(request, conn, user, "category.delete", cat_id, "Category deleted.")
+            if action in ("up", "down"):
+                menu_admin.move_category(conn, cat_id, -1 if action == "up" else 1)
+                return _menu_done(request, conn, user, "category.move", cat_id, "Category moved.", f"cat-{cat_id}")
+            menu_admin.rename_category(conn, cat_id, str(form.get("name", "")))
+        except menu_admin.MenuError as exc:
+            return _menu_error(request, exc)
+        return _menu_done(request, conn, user, "category.rename", cat_id, "Category renamed.", f"cat-{cat_id}")
+
+    @app.post("/admin/menu/items")
+    async def menu_add_item(request: Request, conn=Depends(get_db), user=Depends(admin_user)):
+        form = await request.form()
+        try:
+            item_id = menu_admin.add_item(conn, str(form.get("category", "")), str(form.get("name", "")),
+                                          str(form.get("price", "")), str(form.get("unit_label", "each")))
+        except menu_admin.MenuError as exc:
+            return _menu_error(request, exc)
+        return _menu_done(request, conn, user, "item.add", item_id, "Item added. Customers can order it now.", f"item-{item_id}")
+
+    @app.post("/admin/menu/items/{item_id}")
+    async def menu_edit_item(item_id: str, request: Request, conn=Depends(get_db), user=Depends(admin_user)):
+        form = await request.form()
+        action = str(form.get("action", "save"))
+        try:
+            if action == "remove":
+                name = menu_admin.remove_item(conn, item_id)
+                return _menu_done(request, conn, user, "item.remove", item_id, f"Removed {name}.")
+            old = conn.execute("SELECT category FROM menu_items WHERE id = ?", (item_id,)).fetchone()
+            row = menu_admin.update_item(conn, item_id, {k: v for k, v in form.multi_items()})
+        except menu_admin.MenuError as exc:
+            return _menu_error(request, exc)
+        if (old and old["category"] != row["category"]) or str(form.get("new_mod_name", "")).strip():
+            # Layout changed (moved category or new add-on): reload the page.
+            return _menu_done(request, conn, user, "item.save", item_id, "Saved.", f"item-{item_id}")
+        auth.audit(conn, user.username, "menu.item.save", item_id, "ok")
+        state = "shown to customers" if row["available"] else "hidden from customers"
+        return result(request, True, f"Saved {row['name']}: {money(row['price_cents'])}, {state}.")
+
+    @app.post("/admin/menu/reimport")
+    async def menu_reimport(request: Request, conn=Depends(get_db), user=Depends(admin_user), s=Depends(runtime_settings)):
+        from app.services.menu import seed_menu
+
+        n = seed_menu(conn, s.menu_path)
+        conn.execute("DELETE FROM runtime_markers WHERE key = ?", (menu_admin.EDITED_MARKER,))
+        return _menu_done(request, conn, user, "reimport", str(s.menu_path), f"Re-imported {n} items from the menu file.")
+
+    @app.post("/admin/integrations/twilio/connect")
+    async def connect_twilio(request: Request, conn=Depends(get_db), user=Depends(admin_user)):
+        return await _run_check(request, conn, user, "twilio", checks.connect_twilio, TW_PLAIN, TW_SECRET)
+
+    @app.post("/admin/integrations/twilio/test-sms")
+    async def test_sms(request: Request, conn=Depends(get_db), user=Depends(admin_user)):
+        error = await _apply_form(request, conn, user, TW_PLAIN, TW_SECRET, "twilio", keep_blank=True)
+        if error:
+            return result(request, False, error)
+        s = runtime.effective_settings(conn, get_settings_for(request), request.app.state.secret_store)
+        if not s.owner_phone_numbers:
+            return result(request, False, "Add at least one owner phone number first.")
+        steps = []
+        for phone in s.owner_phone_numbers:
+            try:
+                await twilio.send_sms(s, phone, "Town Donut bot: test text. Owner alerts will come from this number.",
+                                      http=request.app.state.http)
+                steps.append((phone, True, "sent"))
+            except twilio.SMSError as exc:
+                steps.append((phone, False, str(exc)))
+        auth.audit(conn, user.username, "twilio.test_sms", str(len(steps)), "ok" if all(ok for _, ok, _ in steps) else "failed")
+        ok = all(ok for _, ok, _ in steps)
+        return result(request, ok, "Test text sent. Check the owner phones." if ok else "Some texts didn't send.", steps)
+
+    # ---- orders and customers
+    @app.post("/admin/orders/{order_id}/status")
+    async def order_status(order_id: int, request: Request, conn=Depends(get_db), user=Depends(admin_user),
+                           s=Depends(runtime_settings)):
+        target = str((await request.form()).get("target", ""))
+        allowed = {"ACCEPTED", "REJECTED", "READY", "COMPLETED", "NO_SHOW"}
+        if target not in allowed:
+            return result(request, False, "Unknown action.")
+        ok, msg = owner_commands.apply_status(conn, s, load_business(s.business_path), order_id, OrderStatus(target),
+                                              f"portal:{user.username}", utcnow())
+        auth.audit(conn, user.username, f"order.{target.lower()}", str(order_id), "ok" if ok else "refused")
+        if not ok:
+            return result(request, False, msg)
+        back = request.headers.get("hx-current-url") or "/admin/orders"
+        if request.headers.get("hx-request"):
+            return Response(status_code=204, headers={"HX-Redirect": back})
+        return RedirectResponse(back, status_code=303)
+
+    @app.get("/admin/customers")
+    def customers_page(request: Request, conn=Depends(get_db), user=Depends(current_user)):
+        return page(request, "customers.html", user, rows=customers.list_customers(conn))
+
+    @app.get("/admin/customers/{customer_id}")
+    def customer_page(customer_id: int, request: Request, conn=Depends(get_db), user=Depends(current_user)):
+        c = conn.execute("SELECT * FROM customers WHERE id = ?", (customer_id,)).fetchone()
+        if c is None:
+            return RedirectResponse("/admin/customers", status_code=303)
+        conv = conn.execute("SELECT * FROM conversations WHERE customer_id = ?", (customer_id,)).fetchone()
+        orders = conn.execute(
+            "SELECT * FROM orders WHERE customer_id = ? OR (customer_phone IS NOT NULL AND customer_phone = ?) ORDER BY id DESC",
+            (customer_id, c["phone"]),
+        ).fetchall()
+        msgs = conn.execute(
+            "SELECT role, content, created_at FROM messages WHERE conversation_id = ? ORDER BY id DESC LIMIT 40",
+            (conv["id"],),
+        ).fetchall() if conv else []
+        return page(request, "customer.html", user, c=c, conv=conv, orders=orders, msgs=list(reversed(msgs)),
+                    history=customers.pickup_history(conn, customer_id, c["phone"]))
+
+    @app.post("/admin/customers/{customer_id}/bot")
+    async def customer_bot(customer_id: int, request: Request, conn=Depends(get_db), user=Depends(admin_user)):
+        on = str((await request.form()).get("enabled", "")) == "1"
+        conv_svc.set_bot_enabled(conn, customer_id, on, reason=None if on else f"paused by {user.username} in the portal")
+        auth.audit(conn, user.username, "customer.bot." + ("resume" if on else "pause"), str(customer_id), "ok")
+        target = f"/admin/customers/{customer_id}"
+        if request.headers.get("hx-request"):
+            return Response(status_code=204, headers={"HX-Redirect": target})
+        return RedirectResponse(target, status_code=303)
+
+    # ---- owner alerts (Messenger / text)
+    @app.get("/admin/owners")
+    def owners_page(request: Request, conn=Depends(get_db), user=Depends(current_user), s=Depends(runtime_settings)):
+        now = utcnow()
+        accounts = [{**dict(a), "open": owner_accounts.window_open(a, now),
+                     "closes": to_db(owner_accounts.window_closes_at(a)) if a["last_message_at"] else None}
+                    for a in owner_accounts.all_accounts(conn)]
+        recent = conn.execute("SELECT * FROM notifications ORDER BY id DESC LIMIT 25").fetchall()
+        sms_failures = conn.execute(
+            """SELECT * FROM notifications WHERE channel = 'sms' AND status = 'failed' AND created_at >= ?
+               ORDER BY id DESC""", (to_db(now - timedelta(hours=24)),)).fetchall()
+        return page(request, "owners.html", user, s=s, accounts=accounts, recent=recent, sms_failures=sms_failures,
+                    labels={a["psid"]: a["label"] for a in accounts},
+                    reachable=s.owner_alert_channel == "sms" or any(a["open"] and a["active"] for a in accounts),
+                    twilio_ready=twilio.configured(s), saved=request.query_params.get("saved"))
+
+    def _back_to_owners(request: Request, saved: str):
+        target = "/admin/owners?" + urlencode({"saved": saved})
+        if request.headers.get("hx-request"):
+            return Response(status_code=204, headers={"HX-Redirect": target})
+        return RedirectResponse(target, status_code=303)
+
+    @app.post("/admin/owners/channel")
+    async def owners_channel(request: Request, conn=Depends(get_db), user=Depends(admin_user)):
+        value = str((await request.form()).get("owner_alert_channel", ""))
+        try:
+            runtime.set_values(conn, {"owner_alert_channel": value}, user.username)
+        except ValidationError:
+            return result(request, False, "Pick one of the options.")
+        auth.audit(conn, user.username, "settings.save.owner_alert_channel", value, "ok")
+        return _back_to_owners(request, "Saved. It applies to the next alert.")
+
+    @app.post("/admin/owners/link-code")
+    async def owners_link_code(request: Request, conn=Depends(get_db), user=Depends(admin_user)):
+        label = str((await request.form()).get("label", ""))
+        try:
+            code = owner_accounts.create_link_code(conn, label, user.username, utcnow())
+        except owner_accounts.LinkError as exc:
+            return result(request, False, str(exc))
+        auth.audit(conn, user.username, "owner.link_code", label.strip()[:40], "ok")  # never the code itself
+        return result(request, True, f"From {label.strip()}'s own Facebook account, send the Page this message within "
+                                     f"15 minutes:  LINK {code}")
+
+    @app.post("/admin/owners/{account_id}/remove")
+    async def owners_remove(account_id: int, request: Request, conn=Depends(get_db), user=Depends(admin_user)):
+        owner_accounts.remove(conn, account_id)
+        auth.audit(conn, user.username, "owner.remove", str(account_id), "ok")
+        return _back_to_owners(request, "Removed. That account no longer gets alerts or can send commands.")
+
+    @app.post("/admin/owners/{account_id}/test")
+    async def owners_test(account_id: int, request: Request, conn=Depends(get_db), user=Depends(admin_user)):
+        acc = conn.execute("SELECT * FROM owner_accounts WHERE id = ? AND active = 1", (account_id,)).fetchone()
+        if acc is None:
+            return result(request, False, "That owner isn't linked.")
+        if not owner_accounts.window_open(acc, utcnow()):
+            return result(request, False, f"{acc['label']} hasn't messaged the Page in 24 hours, so Facebook won't let the Page "
+                                          "message them. Ask them to send the Page any message, then try again.")
+        conn.execute(
+            """INSERT INTO notifications (type, recipient, body, idempotency_key, channel)
+               VALUES ('owner_test', ?, ?, ?, 'messenger')""",
+            (acc["psid"], "Town Donut bot: test alert. Order alerts will come here.", f"owner_test:{acc['id']}:{secrets.token_hex(4)}"),
+        )
+        auth.audit(conn, user.username, "owner.test", str(account_id), "ok")
+        return result(request, True, f"Test alert queued for {acc['label']}. It should arrive within a few seconds; "
+                                     "check Recent alerts below after a reload.")
+
     # ---- business
     @app.get("/admin/business")
     def business(request: Request, conn=Depends(get_db), user=Depends(current_user), s=Depends(runtime_settings)):
-        items = conn.execute("SELECT * FROM menu_items WHERE available = 1 ORDER BY category, name").fetchall()
-        from app.services.business import load_business
-
+        items = conn.execute("SELECT * FROM menu_items WHERE available = 1 AND archived = 0").fetchall()
         return page(request, "business.html", user, s=s, items=items, biz=load_business(s.business_path))
 
     @app.post("/admin/business")
@@ -463,9 +699,13 @@ def create_admin_app() -> FastAPI:
     @app.get("/admin/orders")
     def orders(request: Request, conn=Depends(get_db), user=Depends(current_user)):
         rows = conn.execute(
-            "SELECT id, customer_name, pickup_time, total_cents, status, needs_review, created_at FROM orders ORDER BY id DESC LIMIT 100"
+            """SELECT o.id, o.customer_id, o.customer_name, o.customer_phone, o.pickup_time, o.total_cents, o.subtotal_cents,
+                      o.status, o.needs_review, o.created_at, o.pickup_check_sent_at,
+                      (SELECT COUNT(*) FROM orders p WHERE p.id != o.id AND p.status = 'NO_SHOW'
+                         AND (p.customer_id = o.customer_id OR (o.customer_phone IS NOT NULL AND p.customer_phone = o.customer_phone))) AS no_shows
+               FROM orders o ORDER BY o.id DESC LIMIT 100"""
         ).fetchall()
-        return page(request, "orders.html", user, orders=rows)
+        return page(request, "orders.html", user, orders=rows, now_db=to_db(utcnow()))
 
     @app.get("/admin/audit")
     def audit_log(request: Request, conn=Depends(get_db), user=Depends(current_user)):

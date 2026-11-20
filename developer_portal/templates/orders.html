@@ -2,14 +2,34 @@
 {% block title %}Orders{% endblock %}
 {% block content %}
 <h2>Orders</h2>
+<p class="muted small">Owners can also do all of this by text: YES 12, NO 12, READY 12, PICKED 12, NOSHOW 12.
+  After each pickup time, owners get a text asking whether the order was picked up.</p>
+<div id="order-result"></div>
 {% if orders %}
 <div class="overflow-auto">
 <table class="striped">
-  <thead><tr><th>#</th><th>Name</th><th>Pickup</th><th class="num">Total</th><th>Status</th><th>Placed</th></tr></thead>
+  <thead><tr><th>#</th><th>Customer</th><th>Pickup</th><th class="num">Subtotal</th><th>Status</th><th>Actions</th></tr></thead>
   <tbody>{% for o in orders %}
-    <tr><td>{{ o.id }}</td><td>{{ o.customer_name }}{% if o.needs_review %} <span class="badge degraded">review</span>{% endif %}</td>
-        <td>{{ o.pickup_time|localtime }}</td><td class="num">{{ o.total_cents|money }}</td>
-        <td>{{ o.status|replace('_', ' ')|title }}</td><td>{{ o.created_at|localtime }}</td></tr>
+    <tr>
+      <td>{{ o.id }}</td>
+      <td><a href="/admin/customers/{{ o.customer_id }}">{{ o.customer_name }}</a>
+        {% if o.customer_phone %}<br><small>{{ o.customer_phone|phone }}</small>{% endif %}
+        {% if o.no_shows %}<br><span class="badge down" title="Owner-only note">{{ o.no_shows }} missed pickup{{ 's' if o.no_shows > 1 }}</span>{% endif %}
+        {% if o.needs_review %} <span class="badge degraded">review</span>{% endif %}</td>
+      <td>{{ o.pickup_time|localtime }}</td>
+      <td class="num">{{ o.subtotal_cents|money }}</td>
+      <td>{{ o.status|replace('_', ' ')|title }}{% if o.status in ('ACCEPTED', 'PREPARING', 'READY') and o.pickup_time <= now_db %}<br><small class="bad">pickup time passed</small>{% endif %}</td>
+      <td class="actions">
+        {% macro act(target, label, cls='secondary outline small') %}
+          <button class="{{ cls }}" hx-post="/admin/orders/{{ o.id }}/status" hx-vals='{"target": "{{ target }}"}' hx-target="#order-result">{{ label }}</button>
+        {% endmacro %}
+        {% if o.status == 'PENDING_ACCEPTANCE' %}{{ act('ACCEPTED', 'Accept', 'small') }}{{ act('REJECTED', 'Decline') }}
+        {% elif o.status in ('ACCEPTED', 'PREPARING') %}{{ act('READY', 'Ready') }}{{ act('COMPLETED', 'Picked up') }}{{ act('NO_SHOW', 'No-show') }}
+        {% elif o.status == 'READY' %}{{ act('COMPLETED', 'Picked up', 'small') }}{{ act('NO_SHOW', 'No-show') }}
+        {% elif o.status == 'NO_SHOW' %}{{ act('COMPLETED', 'Picked up after all') }}
+        {% endif %}
+      </td>
+    </tr>
   {% endfor %}</tbody>
 </table>
 </div>

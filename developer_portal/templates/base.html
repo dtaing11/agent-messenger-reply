@@ -19,8 +19,11 @@
       <ul>
         <li><a href="/admin/" {% if nav == 'overview' %}aria-current="page"{% endif %}>Overview</a></li>
         <li><a href="/admin/integrations" {% if nav == 'integrations' %}aria-current="page"{% endif %}>Integrations</a></li>
+        <li><a href="/admin/menu" {% if nav == 'menu' %}aria-current="page"{% endif %}>Menu</a></li>
         <li><a href="/admin/business" {% if nav == 'business' %}aria-current="page"{% endif %}>Business</a></li>
         <li><a href="/admin/orders" {% if nav == 'orders' %}aria-current="page"{% endif %}>Orders</a></li>
+        <li><a href="/admin/customers" {% if nav in ('customers', 'customer') %}aria-current="page"{% endif %}>Customers</a></li>
+        <li><a href="/admin/owners" {% if nav == 'owners' %}aria-current="page"{% endif %}>Owner alerts</a></li>
         <li><a href="/admin/audit" {% if nav == 'audit' %}aria-current="page"{% endif %}>Audit</a></li>
         <li>
           <form method="post" action="/admin/logout" class="inline">
