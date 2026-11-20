@@ -1,0 +1,83 @@
+"""Bootstrap configuration.
+
+Values come from environment variables (or a local .env). Business rules the owner has not
+confirmed yet are deliberately configurable so they can change without code edits; the
+developer portal (Phase 9) will later layer versioned runtime settings on top of this.
+"""
+
+from functools import lru_cache
+from pathlib import Path
+from typing import Annotated
+
+from pydantic import Field, SecretStr, field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    # Meta Messenger
+    meta_graph_api_version: str = "v21.0"
+    meta_page_id: str = ""
+    meta_page_access_token: SecretStr = SecretStr("")
+    meta_app_secret: SecretStr = SecretStr("")
+    meta_verify_token: SecretStr = SecretStr("")
+    # Our app's id: echoes carrying it are our own replies; other echoes are staff typing in
+    # the Page inbox, which pauses the bot for that customer (if enabled below).
+    meta_app_id: str = ""
+    pause_bot_on_staff_reply: bool = True
+    # Sent while the LLM agent (Phase 5) is not wired up yet.
+    placeholder_reply: str = (
+        "Thanks for messaging Town Donut & Breakfast! I'm an automated assistant that's still being set up. "
+        "A team member will get back to you soon."
+    )
+
+    # OpenRouter (Phase 5)
+    openrouter_api_key: SecretStr = SecretStr("")
+    ai_model: str = ""
+    ai_fallback_model: str = ""
+    max_tool_rounds: int = Field(6, ge=1, le=20)
+
+    # Twilio (Phase 6)
+    twilio_account_sid: str = ""
+    twilio_auth_token: SecretStr = SecretStr("")
+    twilio_phone_number: str = ""
+    # Owner confirmed two phones: every listed number gets order SMS and may send commands.
+    owner_phone_numbers: Annotated[list[str], NoDecode] = Field(default_factory=list)
+    sms_status_callback_url: str = ""
+
+    # Store / business rules (placeholders until the owner confirms)
+    store_timezone: str = "America/Chicago"
+    store_location: str = "watson"
+    tax_rate_bps: int = Field(0, ge=0, le=5000)
+    pending_order_expiry_minutes: int = Field(120, ge=0)
+    customer_can_cancel_accepted: bool = False
+    large_order_threshold_cents: int = Field(10000, ge=0)
+    confirmation_token_ttl_minutes: int = Field(30, ge=1)
+
+    # Storage
+    database_path: Path = Path("./data/database.db")
+    menu_path: Path = Path("./data/menu.json")
+    business_path: Path = Path("./data/business.json")
+    qdrant_url: str = "http://qdrant:6333"
+    embedding_model: str = "BAAI/bge-small-en-v1.5"
+    rag_top_k: int = 5
+
+    # Worker
+    worker_poll_seconds: float = 0.5
+    worker_max_attempts: int = Field(8, ge=1)
+    worker_lock_timeout_seconds: int = 300
+    worker_concurrency: int = Field(4, ge=1, le=32)
+    historical_import_enabled: bool = False
+
+    @field_validator("owner_phone_numbers", mode="before")
+    @classmethod
+    def _split_phones(cls, v):
+        if isinstance(v, str):
+            return [p.strip() for p in v.split(",") if p.strip()]
+        return v
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()

@@ -1,0 +1,103 @@
+{
+  "_comment": "Test fixture menu. Kept separate from data/menu.json so tests do not change when the real menu does.",
+  "items": [
+    {
+      "id": "glazed_single",
+      "name": "Glazed Donut",
+      "category": "donuts",
+      "unit_label": "each",
+      "price_cents": 125,
+      "max_quantity": 48,
+      "description": "Classic yeast-raised glazed donut."
+    },
+    {
+      "id": "glazed_dozen",
+      "name": "Dozen Glazed Donuts",
+      "category": "donuts",
+      "unit_label": "dozen",
+      "price_cents": 1200,
+      "max_quantity": 20,
+      "description": "Twelve glazed donuts."
+    },
+    {
+      "id": "assorted_dozen",
+      "name": "Dozen Assorted Donuts",
+      "category": "donuts",
+      "unit_label": "dozen",
+      "price_cents": 1400,
+      "max_quantity": 20,
+      "description": "Twelve assorted donuts, chosen by the store."
+    },
+    {
+      "id": "sausage_kolache",
+      "name": "Sausage Kolache",
+      "category": "kolaches",
+      "unit_label": "each",
+      "price_cents": 250,
+      "max_quantity": 60,
+      "description": "Sausage baked in sweet dough.",
+      "modifiers": [
+        {
+          "id": "sausage_kolache_cheese",
+          "name": "Add cheese",
+          "price_delta_cents": 50
+        },
+        {
+          "id": "sausage_kolache_jalapeno",
+          "name": "Add jalapeño",
+          "price_delta_cents": 25
+        }
+      ]
+    },
+    {
+      "id": "breakfast_croissant",
+      "name": "Breakfast Croissant",
+      "category": "breakfast",
+      "unit_label": "each",
+      "price_cents": 550,
+      "max_quantity": 30,
+      "description": "Egg and cheese on a croissant.",
+      "modifiers": [
+        {
+          "id": "breakfast_croissant_bacon",
+          "name": "Add bacon",
+          "price_delta_cents": 150
+        },
+        {
+          "id": "breakfast_croissant_sausage",
+          "name": "Add sausage",
+          "price_delta_cents": 150
+        }
+      ]
+    },
+    {
+      "id": "coffee_medium",
+      "name": "Medium Coffee",
+      "category": "drinks",
+      "unit_label": "each",
+      "price_cents": 225,
+      "max_quantity": 20,
+      "description": "Hot brewed coffee."
+    },
+    {
+      "id": "special_design_donut",
+      "name": "Special Design Donut",
+      "category": "special_design",
+      "unit_label": "each",
+      "price_cents": 2289,
+      "max_quantity": 10,
+      "description": "Decorated donut with a custom message for birthdays, holidays and special events, e.g. \"Happy Birthday\", \"Happy Bday {Name}\" or \"Merry Christmas\".",
+      "custom": {
+        "message_max_length": 40,
+        "design_max_length": 300,
+        "name_free_letters": 7,
+        "long_name_surcharge_cents": null,
+        "always_review": true,
+        "questions": {
+          "message": "What would you like written on it? For example \"Happy Birthday\", \"Happy Bday Emma\" or \"Merry Christmas\".",
+          "design": "What kind of design are you looking for (theme, colors, decorations)?"
+        }
+      }
+    }
+  ]
+}

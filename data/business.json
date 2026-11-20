@@ -1,0 +1,47 @@
+{
+  "_comment": "Address, phone and hours (4:30 AM-12:30 PM, open every day including holidays) are from the owner. Pickup lead time and booking horizon are still PLACEHOLDERS.",
+  "name": "Town Donut & Breakfast",
+  "location": "watson",
+  "address": "35055 3C LA-16, Denham Springs, LA",
+  "phone": "(225) 380-5250",
+  "timezone": "America/Chicago",
+  "hours": {
+    "monday": {
+      "open": "04:30",
+      "close": "12:30"
+    },
+    "tuesday": {
+      "open": "04:30",
+      "close": "12:30"
+    },
+    "wednesday": {
+      "open": "04:30",
+      "close": "12:30"
+    },
+    "thursday": {
+      "open": "04:30",
+      "close": "12:30"
+    },
+    "friday": {
+      "open": "04:30",
+      "close": "12:30"
+    },
+    "saturday": {
+      "open": "04:30",
+      "close": "12:30"
+    },
+    "sunday": {
+      "open": "04:30",
+      "close": "12:30"
+    }
+  },
+  "closed_dates": [],
+  "pickup": {
+    "min_lead_minutes": 30,
+    "max_days_ahead": 14,
+    "slot_minutes": 15
+  },
+  "payment": "Payment at pickup. We do not take card details over Messenger.",
+  "location_display": "Denham Springs / Watson",
+  "price_note": "All prices are before tax. Tax is added at pickup."
+}

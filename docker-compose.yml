@@ -1,0 +1,56 @@
+# Runs natively on an M1 Mac (all images are multi-arch with linux/arm64 variants).
+#   docker compose up -d                      # api + worker
+#   docker compose --profile tunnel up -d     # + Cloudflare Tunnel (needs CLOUDFLARE_TUNNEL_TOKEN)
+#   docker compose --profile rag up -d        # + Qdrant (Phase 3)
+
+x-app: &app
+  build: .
+  env_file: .env
+  environment:
+    DATABASE_PATH: /app/data/database.db
+    MENU_PATH: /app/data/menu.json
+    BUSINESS_PATH: /app/data/business.json
+  volumes:
+    - ./data:/app/data
+  restart: unless-stopped
+  networks: [private]
+
+services:
+  api:
+    <<: *app
+    # Bound to localhost only; the public path is the tunnel, which should route /webhooks/* only.
+    ports:
+      - "127.0.0.1:8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  worker:
+    <<: *app
+    command: ["python", "-m", "app.workers.message_worker"]
+    depends_on:
+      api:
+        condition: service_healthy
+
+  cloudflared:
+    image: cloudflare/cloudflared:2025.4.0
+    profiles: [tunnel]
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    restart: unless-stopped
+    networks: [private]
+    depends_on: [api]
+
+  qdrant:
+    image: qdrant/qdrant:v1.13.4
+    profiles: [rag]
+    volumes:
+      - ./data/qdrant:/qdrant/storage
+    restart: unless-stopped
+    networks: [private]   # not published to the host
+
+networks:
+  private:
