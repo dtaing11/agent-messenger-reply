@@ -85,7 +85,7 @@ class Settings(BaseSettings):
     semantic_search: bool = True
     qdrant_url: str = ""
     vector_index_path: Path | None = None  # default: data/vector_index next to the database
-    model_cache_path: Path | None = None  # default: data/models (the model downloads once, ~70 MB)
+    model_cache_path: Path | None = None  # default: the repo's data/models (downloads once, ~70 MB; python -m app.download_model)
     embedding_model: str = "BAAI/bge-small-en-v1.5"
     semantic_min_score: float = Field(0.62, ge=0.0, le=1.0)
     rag_top_k: int = 5

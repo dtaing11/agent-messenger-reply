@@ -90,23 +90,45 @@ def query_terms(query: str) -> list[str]:
     return out[:8]
 
 
+_SEARCH_FIELDS = ("name", "category", "category_name", "description", "search_terms")
+
+
+def _term_pattern(term: str) -> re.Pattern:
+    """Whole words, so "ice" doesn't find "Iced Coffee" or "Juice". A plural counts ("donut"
+    finds "Donuts"), and a longer word may be the start of one ("choco", "glaze")."""
+    t = re.escape(term)
+    return re.compile(rf"\b{t}(?:s|es)?\b" if len(term) < 5 else rf"\b{t}", re.I)
+
+
+def _matched(row: sqlite3.Row, patterns: list[re.Pattern]) -> tuple[int, int]:
+    """(how many of the words the item matches, how many of them are in its name)."""
+    keys = row.keys()
+    text = " ".join(str(row[f] or "") for f in _SEARCH_FIELDS if f in keys)
+    return sum(1 for p in patterns if p.search(text)), sum(1 for p in patterns if p.search(row["name"] or ""))
+
+
+def matches_all(row: sqlite3.Row, query: str) -> bool:
+    """Whether the item matches every word worth matching in the query."""
+    patterns = [_term_pattern(t) for t in query_terms(query)]
+    return bool(patterns) and _matched(row, patterns)[0] == len(patterns)
+
+
 def search_menu(conn: sqlite3.Connection, query: str, limit: int = 10) -> list[sqlite3.Row]:
-    """Keyword match over available items (name, category, description, search words). Items
-    matching more of the words come first."""
+    """Keyword match over available items (name, category, description, search words), whole
+    words only. Items matching more of the words come first, and a word in the name counts
+    double, so "chocolate donut" ranks Chocolate items first."""
     terms = query_terms(query)
     if not terms:
         return conn.execute(f"{_ITEMS} ORDER BY mc.sort_order, mi.sort_order, mi.name LIMIT ?", (limit,)).fetchall()
-    fields = ("name", "category", "category_name", "description", "search_terms")
-    match = "(" + " OR ".join(f"lower(COALESCE({f}, '')) LIKE ?" for f in fields) + ")"
-    params = [f"%{t}%" for t in terms for _ in fields]
-    score = " + ".join(f"(CASE WHEN {match} THEN 1 ELSE 0 END)" for _ in terms)
-    # A hit in the name counts double, so "chocolate donut" ranks Chocolate items first.
-    name_score = " + ".join("(CASE WHEN lower(name) LIKE ? THEN 1 ELSE 0 END)" for _ in terms)
-    where = " OR ".join([match] * len(terms))
-    return conn.execute(
-        f"SELECT * FROM ({_ITEMS}) WHERE {where} ORDER BY ({score}) + ({name_score}) DESC, name LIMIT ?",
-        (*params, *params, *[f"%{t}%" for t in terms], limit),
-    ).fetchall()
+    patterns = [_term_pattern(t) for t in terms]
+    # LIKE narrows the rows; the word patterns decide.
+    match = " OR ".join(f"lower(COALESCE({f}, '')) LIKE ?" for f in _SEARCH_FIELDS)
+    where = " OR ".join([f"({match})"] * len(terms))
+    rows = conn.execute(f"SELECT * FROM ({_ITEMS}) WHERE {where}",
+                        [f"%{t}%" for t in terms for _ in _SEARCH_FIELDS]).fetchall()
+    scored = [(hits + in_name, r) for r in rows for hits, in_name in [_matched(r, patterns)] if hits]
+    scored.sort(key=lambda x: (-x[0], x[1]["name"]))
+    return [r for _, r in scored[:limit]]
 
 
 def pool_items(conn: sqlite3.Connection, category: str, price_cents: int) -> list[sqlite3.Row]:

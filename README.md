@@ -91,7 +91,8 @@ backups page, log viewer.
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements-dev.txt
 cp .env.example .env          # set META_VERIFY_TOKEN, META_APP_SECRET, etc.
-pytest -q
+python -m app.download_model  # the search model, once (~70 MB into data/models; otherwise it downloads on first start)
+pytest -q                     # SPRINKLE_REAL_MODEL=1 pytest -q also runs the search tests on the real model
 python -m app.run_dev                     # webhook app :8000 + portal :8001 + worker
 cloudflared tunnel --url http://localhost:8000   # public URL for Meta (in another terminal)
 ```
