@@ -239,3 +239,8 @@ def test_faq_short_words_match_whole_words_only(real_menu, index):
     # FAQ answers score a bit lower than menu items, so they get a slightly lower bar.
     index.search = lambda kind, q, limit: [("hours", 0.60)]
     assert [d["id"] for d in search.find_knowledge(real_menu, "when do you close", min_score=0.62)] == ["hours"]
+
+
+def test_store_questions_dont_list_random_menu_items(real_menu):
+    for q in ("when do you close", "do you take cards", "is it fresh"):
+        assert search.find_menu_items(real_menu, q) == ([], True), q

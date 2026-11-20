@@ -79,9 +79,9 @@ def _meaning(conn: sqlite3.Connection, kind: str, query: str, limit: int, min_sc
 
 def _keyword_menu(conn: sqlite3.Connection, query: str, limit: int) -> list[sqlite3.Row]:
     rows = menu.search_menu(conn, query, limit=limit)
-    if not rows:  # try each word on its own before giving up
-        seen: dict[str, sqlite3.Row] = {}
-        for w in query.split():
+    if not rows:  # try each word on its own before giving up (never a filler word like "do",
+        seen: dict[str, sqlite3.Row] = {}  # which would list the start of the menu)
+        for w in menu.query_terms(query):
             for r in menu.search_menu(conn, w, limit=5):
                 seen.setdefault(r["id"], r)
         rows = list(seen.values())[:limit]
