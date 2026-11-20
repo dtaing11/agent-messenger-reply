@@ -564,6 +564,26 @@
       "price_cents": 280,
       "max_quantity": 30,
       "description": ""
+    },
+    {
+      "id": "special_design_donut",
+      "name": "Special Design Donut",
+      "category": "special_design",
+      "unit_label": "each",
+      "price_cents": 2289,
+      "max_quantity": 10,
+      "description": "Decorated donut with a custom message for birthdays, holidays and special events, e.g. \"Happy Birthday\", \"Happy Bday {Name}\" or \"Merry Christmas\".",
+      "custom": {
+        "message_max_length": 40,
+        "design_max_length": 300,
+        "name_free_letters": 7,
+        "long_name_surcharge_cents": null,
+        "always_review": true,
+        "questions": {
+          "message": "What would you like written on it? For example \"Happy Birthday\", \"Happy Bday Emma\" or \"Merry Christmas\".",
+          "design": "What kind of design are you looking for (theme, colors, decorations)?"
+        }
+      }
     }
   ]
 }

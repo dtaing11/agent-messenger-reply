@@ -119,7 +119,7 @@ def test_large_order_flagged(conn, customer_id, biz, settings):
     s = order_svc.present_order_summary(conn, customer_id, biz, settings, NOW)
     o = order_svc.submit_order(conn, customer_id, s.token, biz, settings, NOW)
     assert o["needs_review"] == 1
-    assert "LARGE ORDER" in conn.execute("SELECT body FROM notifications LIMIT 1").fetchone()[0]
+    assert "REVIEW:" in conn.execute("SELECT body FROM notifications LIMIT 1").fetchone()[0]
 
 
 @pytest.fixture

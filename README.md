@@ -72,6 +72,7 @@ Each is configurable in `.env` (or `data/*.json`) so the answer doesn't need a c
 | Owner phones | **Confirmed: two.** Every number gets the order SMS and may send commands | `OWNER_PHONE_NUMBERS` (comma-separated) |
 | Staff reply by hand? | Yes, and a manual reply pauses the bot for that customer | `PAUSE_BOT_ON_STAFF_REPLY` |
 | Large orders | Subtotal of $100 or more is flagged in the SMS | `LARGE_ORDER_THRESHOLD_CENTS` |
+| Special Design Donut | **Confirmed:** $22.89, always asks for the message and the design, owner always reviews. Long-name surcharge (names over 7 letters) amount unknown, so the store confirms it when accepting | `custom` block on `special_design_donut` in `data/menu.json` (`long_name_surcharge_cents`) |
 | Languages | **Confirmed: English only** (keeps `bge-small-en-v1.5`) | `EMBEDDING_MODEL` |
 | Historical inbox import | Off | `HISTORICAL_IMPORT_ENABLED` |
 | Meta developer app | **Confirmed: not created yet**; webhook is tested with signed fixtures | `META_*` |

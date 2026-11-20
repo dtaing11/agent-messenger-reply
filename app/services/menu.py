@@ -17,12 +17,12 @@ def seed_menu(conn: sqlite3.Connection, path: Path) -> int:
         conn.execute("UPDATE menu_modifiers SET available = 0")
         for it in items:
             conn.execute(
-                """INSERT INTO menu_items (id, name, category, description, unit_label, price_cents, max_quantity, available)
-                   VALUES (:id, :name, :category, :description, :unit_label, :price_cents, :max_quantity, :available)
+                """INSERT INTO menu_items (id, name, category, description, unit_label, price_cents, max_quantity, available, custom_rules)
+                   VALUES (:id, :name, :category, :description, :unit_label, :price_cents, :max_quantity, :available, :custom_rules)
                    ON CONFLICT(id) DO UPDATE SET name=excluded.name, category=excluded.category,
                      description=excluded.description, unit_label=excluded.unit_label,
                      price_cents=excluded.price_cents, max_quantity=excluded.max_quantity,
-                     available=excluded.available,
+                     available=excluded.available, custom_rules=excluded.custom_rules,
                      updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')""",
                 {
                     "id": it["id"],
@@ -33,6 +33,7 @@ def seed_menu(conn: sqlite3.Connection, path: Path) -> int:
                     "price_cents": int(it["price_cents"]),
                     "max_quantity": int(it.get("max_quantity", 100)),
                     "available": 1 if it.get("available", True) else 0,
+                    "custom_rules": json.dumps(it["custom"]) if it.get("custom") else None,
                 },
             )
             for m in it.get("modifiers", []):

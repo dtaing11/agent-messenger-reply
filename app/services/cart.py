@@ -7,13 +7,22 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from app.database.connection import transaction
-from app.services import menu
+from app.services import custom_items, menu
 from app.services.pricing import Totals, compute_totals
 from app.timeutil import from_db, to_db
 
 
 class CartError(Exception):
     """A customer-facing validation problem (unknown item, bad quantity, ...)."""
+
+
+class DetailsNeeded(CartError):
+    """A custom item is missing details; `questions` are what to ask the customer."""
+
+    def __init__(self, item_name: str, missing: list[str], questions: list[str]):
+        super().__init__(f"For the {item_name}: " + " ".join(questions))
+        self.missing = missing
+        self.questions = questions
 
 
 @dataclass(frozen=True)
@@ -24,9 +33,13 @@ class CartLine:
     unit_label: str
     quantity: int
     modifiers: tuple[tuple[str, str], ...]  # (id, name)
-    unit_price_cents: int  # base price + modifier deltas, current menu price
+    unit_price_cents: int  # base price + modifier deltas + known surcharge, current menu price
     line_total_cents: int
     available: bool
+    details: dict = field(default_factory=dict)  # custom items: message / name / design
+    surcharge_cents: int = 0
+    surcharge_pending: bool = False  # a surcharge applies but the store sets the amount
+    needs_review: bool = False
 
 
 @dataclass
@@ -44,6 +57,14 @@ class CartView:
     @property
     def is_empty(self) -> bool:
         return not self.lines
+
+    @property
+    def surcharge_pending(self) -> bool:
+        return any(l.surcharge_pending for l in self.lines)
+
+    @property
+    def needs_review(self) -> bool:
+        return any(l.needs_review for l in self.lines)
 
 
 def get_or_create_cart(conn: sqlite3.Connection, customer_id: int) -> sqlite3.Row:
@@ -71,6 +92,20 @@ def _normalize_modifiers(conn: sqlite3.Connection, item_id: str, modifier_ids: l
     return json.dumps(ids)
 
 
+def _normalize_details(item: sqlite3.Row, details: dict | None) -> str:
+    rules = custom_items.CustomRules.from_json(item["custom_rules"])
+    if rules is None:
+        if details:
+            raise CartError(f"{item['name']} doesn't take custom details.")
+        return "{}"
+    try:
+        return custom_items.canonical(custom_items.normalize_details(rules, details))
+    except custom_items.MissingDetails as exc:
+        raise DetailsNeeded(item["name"], exc.missing, exc.questions) from exc
+    except ValueError as exc:
+        raise CartError(str(exc)) from exc
+
+
 def _check_item(conn: sqlite3.Connection, item_id: str, quantity: int) -> sqlite3.Row:
     item = menu.get_item(conn, item_id)
     if item is None or not item["available"]:
@@ -80,14 +115,22 @@ def _check_item(conn: sqlite3.Connection, item_id: str, quantity: int) -> sqlite
     return item
 
 
-def add_item(conn: sqlite3.Connection, customer_id: int, item_id: str, quantity: int, modifiers: list[str] | None = None) -> CartView:
+def add_item(
+    conn: sqlite3.Connection,
+    customer_id: int,
+    item_id: str,
+    quantity: int,
+    modifiers: list[str] | None = None,
+    details: dict | None = None,
+) -> CartView:
     with transaction(conn):
         cart = get_or_create_cart(conn, customer_id)
         mods = _normalize_modifiers(conn, item_id, modifiers)
-        _check_item(conn, item_id, quantity)
+        item = _check_item(conn, item_id, quantity)
+        det = _normalize_details(item, details)
         existing = conn.execute(
-            "SELECT id, quantity FROM cart_items WHERE cart_id = ? AND item_id = ? AND modifiers = ?",
-            (cart["id"], item_id, mods),
+            "SELECT id, quantity FROM cart_items WHERE cart_id = ? AND item_id = ? AND modifiers = ? AND details = ?",
+            (cart["id"], item_id, mods, det),
         ).fetchone()
         if existing:
             new_qty = existing["quantity"] + quantity
@@ -95,15 +138,22 @@ def add_item(conn: sqlite3.Connection, customer_id: int, item_id: str, quantity:
             conn.execute("UPDATE cart_items SET quantity = ? WHERE id = ?", (new_qty, existing["id"]))
         else:
             conn.execute(
-                "INSERT INTO cart_items (cart_id, item_id, quantity, modifiers) VALUES (?, ?, ?, ?)",
-                (cart["id"], item_id, quantity, mods),
+                "INSERT INTO cart_items (cart_id, item_id, quantity, modifiers, details) VALUES (?, ?, ?, ?, ?)",
+                (cart["id"], item_id, quantity, mods, det),
             )
         _bump(conn, cart["id"])
     return view_cart(conn, customer_id)
 
 
-def update_item(conn: sqlite3.Connection, customer_id: int, line_id: int, quantity: int, modifiers: list[str] | None = None) -> CartView:
-    """Set a line's quantity (0 removes it) and optionally replace its modifiers."""
+def update_item(
+    conn: sqlite3.Connection,
+    customer_id: int,
+    line_id: int,
+    quantity: int,
+    modifiers: list[str] | None = None,
+    details: dict | None = None,
+) -> CartView:
+    """Set a line's quantity (0 removes it) and optionally replace its modifiers or details."""
     with transaction(conn):
         cart = get_or_create_cart(conn, customer_id)
         line = conn.execute("SELECT * FROM cart_items WHERE id = ? AND cart_id = ?", (line_id, cart["id"])).fetchone()
@@ -112,15 +162,18 @@ def update_item(conn: sqlite3.Connection, customer_id: int, line_id: int, quanti
         if quantity == 0:
             conn.execute("DELETE FROM cart_items WHERE id = ?", (line_id,))
         else:
-            _check_item(conn, line["item_id"], quantity)
+            item = _check_item(conn, line["item_id"], quantity)
             mods = line["modifiers"] if modifiers is None else _normalize_modifiers(conn, line["item_id"], modifiers)
+            det = line["details"] if details is None else _normalize_details(item, details)
             clash = conn.execute(
-                "SELECT id FROM cart_items WHERE cart_id = ? AND item_id = ? AND modifiers = ? AND id != ?",
-                (cart["id"], line["item_id"], mods, line_id),
+                "SELECT id FROM cart_items WHERE cart_id = ? AND item_id = ? AND modifiers = ? AND details = ? AND id != ?",
+                (cart["id"], line["item_id"], mods, det, line_id),
             ).fetchone()
             if clash:
                 raise CartError("You already have that item with those options; update that line instead.")
-            conn.execute("UPDATE cart_items SET quantity = ?, modifiers = ? WHERE id = ?", (quantity, mods, line_id))
+            conn.execute(
+                "UPDATE cart_items SET quantity = ?, modifiers = ?, details = ? WHERE id = ?", (quantity, mods, det, line_id)
+            )
         _bump(conn, cart["id"])
     return view_cart(conn, customer_id)
 
@@ -179,8 +232,8 @@ def view_cart_by_id(conn: sqlite3.Connection, cart_id: int, tax_rate_bps: int = 
 
 def _view(conn: sqlite3.Connection, cart: sqlite3.Row, tax_rate_bps: int) -> CartView:
     rows = conn.execute(
-        """SELECT ci.id AS line_id, ci.item_id, ci.quantity, ci.modifiers,
-                  mi.name, mi.unit_label, mi.price_cents, mi.available
+        """SELECT ci.id AS line_id, ci.item_id, ci.quantity, ci.modifiers, ci.details,
+                  mi.name, mi.unit_label, mi.price_cents, mi.available, mi.custom_rules
            FROM cart_items ci JOIN menu_items mi ON mi.id = ci.item_id
            WHERE ci.cart_id = ? ORDER BY ci.id""",
         (cart["id"],),
@@ -197,10 +250,18 @@ def _view(conn: sqlite3.Connection, cart: sqlite3.Row, tax_rate_bps: int) -> Car
                 continue
             mods.append((m["id"], m["name"]))
             unit += m["price_delta_cents"]
+        details = json.loads(r["details"])
+        rules = custom_items.CustomRules.from_json(r["custom_rules"])
+        extra, pending = custom_items.surcharge(rules, details) if rules else (0, False)
+        unit += extra
         if not ok:
             unavailable.append(r["name"])
         lines.append(
-            CartLine(r["line_id"], r["item_id"], r["name"], r["unit_label"], r["quantity"], tuple(mods), unit, unit * r["quantity"], ok)
+            CartLine(
+                r["line_id"], r["item_id"], r["name"], r["unit_label"], r["quantity"], tuple(mods), unit,
+                unit * r["quantity"], ok, details=details, surcharge_cents=extra, surcharge_pending=pending,
+                needs_review=bool(rules and rules.always_review),
+            )
         )
     return CartView(
         cart_id=cart["id"],

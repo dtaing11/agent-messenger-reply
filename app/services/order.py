@@ -40,6 +40,20 @@ class SummaryChanged(OrderError):
 TAX_REMINDER = "Reminder: prices shown are before tax. Tax will be added at pickup."
 
 
+LONG_NAME_NOTE = "Names longer than 7 letters have an extra charge. Our team will confirm the final price."
+
+
+def _detail_lines(details: dict, indent: str) -> list[str]:
+    out = []
+    if details.get("message"):
+        out.append(f'{indent}Message: "{details["message"]}"')
+    if details.get("name"):
+        out.append(f"{indent}Name: {details['name']}")
+    if details.get("design"):
+        out.append(f"{indent}Design: {details['design']}")
+    return out
+
+
 @dataclass(frozen=True)
 class OrderSummary:
     token: str
@@ -75,6 +89,9 @@ def render_summary(view: cart_svc.CartView, biz: BusinessInfo) -> str:
     for l in view.lines:
         mods = f" ({', '.join(name for _, name in l.modifiers)})" if l.modifiers else ""
         lines.append(f"{l.quantity} x {l.name}{mods} — {money(l.line_total_cents)}")
+        lines += _detail_lines(l.details, indent="   ")
+        if l.surcharge_cents:
+            lines.append(f"   Includes {money(l.surcharge_cents)} long-name surcharge")
     t = view.totals
     if t.tax_included:
         lines += [f"Subtotal: {money(t.subtotal_cents)}", f"Tax: {money(t.tax_cents)}", f"Total: {money(t.total_cents)}"]
@@ -88,6 +105,10 @@ def render_summary(view: cart_svc.CartView, biz: BusinessInfo) -> str:
     if view.notes:
         lines.append(f"Notes: {view.notes}")
     lines.append("Payment: At pickup")
+    if view.surcharge_pending:
+        lines.append(LONG_NAME_NOTE)
+    if view.needs_review:
+        lines.append("Custom designs are reviewed by our team, who will confirm the details with you.")
     if not t.tax_included:
         lines.append(TAX_REMINDER)
     lines.append("Would you like to submit this order?")
@@ -145,7 +166,7 @@ def submit_order(
         if view.totals.total_cents != tok["total_cents"]:
             raise SummaryChanged("Prices changed since your summary. Please review the updated total.")
 
-        needs_review = view.totals.subtotal_cents >= settings.large_order_threshold_cents > 0
+        needs_review = view.needs_review or view.totals.subtotal_cents >= settings.large_order_threshold_cents > 0
         expires_at = (
             to_db(now + timedelta(minutes=settings.pending_order_expiry_minutes))
             if settings.pending_order_expiry_minutes
@@ -163,9 +184,11 @@ def submit_order(
         for l in view.lines:
             conn.execute(
                 """INSERT INTO order_items (order_id, item_id, item_name_snapshot, quantity, unit_price_cents,
-                     modifiers_snapshot, line_total_cents) VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                     modifiers_snapshot, line_total_cents, details_snapshot, surcharge_pending)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (order_id, l.item_id, l.name, l.quantity, l.unit_price_cents,
-                 json.dumps([{"id": i, "name": n} for i, n in l.modifiers]), l.line_total_cents),
+                 json.dumps([{"id": i, "name": n} for i, n in l.modifiers]), l.line_total_cents,
+                 json.dumps(l.details, ensure_ascii=False), int(l.surcharge_pending)),
             )
         conn.execute(
             "INSERT INTO order_events (order_id, from_status, to_status, actor) VALUES (?, NULL, ?, 'customer')",
@@ -207,6 +230,9 @@ def format_owner_sms(conn: sqlite3.Connection, order: sqlite3.Row, biz: Business
         mods = json.loads(it["modifiers_snapshot"])
         suffix = f" ({', '.join(m['name'] for m in mods)})" if mods else ""
         lines.append(f"{it['quantity']} x {it['item_name_snapshot']}{suffix}")
+        lines += _detail_lines(json.loads(it["details_snapshot"]), indent="  ")
+        if it["surcharge_pending"]:
+            lines.append("  LONG NAME: add surcharge and tell the customer")
     lines.append("")
     if order["tax_cents"]:
         lines.append(f"Total: {money(order['total_cents'])} (incl. tax {money(order['tax_cents'])})")
@@ -214,7 +240,7 @@ def format_owner_sms(conn: sqlite3.Connection, order: sqlite3.Row, biz: Business
         lines.append(f"Subtotal: {money(order['subtotal_cents'])} (before tax)")
     lines += ["Payment: At pickup", "Status: Awaiting acceptance", f"Notes: {order['notes'] or 'None'}"]
     if order["needs_review"]:
-        lines.append("LARGE ORDER: please review carefully.")
+        lines.append("REVIEW: custom design or large order, please check details.")
     lines += ["", f"Reply YES {order['id']} to accept or NO {order['id']} to decline."]
     return "\n".join(lines)
 
